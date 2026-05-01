@@ -38,12 +38,6 @@ nfpms:
       postinstall: debian/postinst
       preremove: debian/prerm
 
-archives:
-  - id: go-monitor
-    builds:
-      - go-monitor
-    format: tar.gz
-
 checksum:
   name_template: "checksums.txt"
 
