@@ -1,29 +1,6 @@
 version: 2
 
-archives:
-  - id: go-monitor
-    builds:
-      - go-monitor
-    format: tar.gz
-    format_overrides:
-      - goos: linux
-        format: deb
-    files:
-      - src: debian/go-monitor.service
-        dst: lib/systemd/system/go-monitor.service
-      - src: config.example.yaml
-        dst: etc/go-monitor/config.yaml
-
-deb:
-  depends:
-    - libc6
-  section: utils
-  priority: optional
-  maintainer: lyj <lyj404@qq.com>
-  homepage: https://github.com/lyj404/go-monitor
-  scripts:
-    postinst: debian/postinst
-    prerm: debian/prerm
+project_name: go-monitor
 
 builds:
   - id: go-monitor
@@ -38,11 +15,36 @@ builds:
     env:
       - CGO_ENABLED=0
 
+nfpms:
+  - id: go-monitor
+    package_name: go-monitor
+    maintainer: lyj <lyj404@qq.com>
+    homepage: https://github.com/lyj404/go-monitor
+    description: Linux system resource monitor with web dashboard
+    license: Apache-2.0
+    section: utils
+    priority: optional
+    depends:
+      - libc6
+    bindir: /usr/bin
+    contents:
+      - src: debian/go-monitor.service
+        dst: lib/systemd/system/go-monitor.service
+      - src: config.example.yaml
+        dst: etc/go-monitor/config.yaml
+    deb:
+      scripts:
+        postinst: debian/postinst
+        prerm: debian/prerm
+
+archives:
+  - id: go-monitor
+    builds:
+      - go-monitor
+    format: tar.gz
+
 checksum:
   name_template: "checksums.txt"
-
-snapshot:
-  name_template: "{{ .Tag }}-next"
 
 changelog:
   sort: asc
