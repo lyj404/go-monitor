@@ -1,0 +1,13 @@
+Source: go-monitor
+Section: utils
+Priority: optional
+Maintainer: lyj <lyj404@qq.com>
+Build-Depends: debhelper-compat (= 13), golang-any
+Standards-Version: 4.6.0
+
+Package: go-monitor
+Architecture: linux-any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: System resource monitor with web dashboard
+ A lightweight system monitor that tracks CPU, memory,
+ disk and network usage with web dashboard and email alerts.

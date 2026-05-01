@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - 服务器监控</title>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --bg-card: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #495057;
+            --text-muted: #868e96;
+            --accent: #0d6efd;
+            --accent-hover: #0b5ed7;
+            --border: rgba(0,0,0,0.08);
+            --border-light: rgba(0,0,0,0.12);
+            --danger: #dc3545;
+            --success: #198754;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px 24px;
+            display: grid;
+            grid-template-columns: 36px 1fr 36px;
+            align-items: center;
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 1200px;
+            width: calc(100% - 48px);
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .header h1 { justify-self: center; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header-icon-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: var(--text-muted);
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .header-icon-btn:hover { 
+            background: var(--bg-tertiary); 
+            color: var(--text-primary); 
+        }
+        .header-logout {
+            color: var(--danger);
+        }
+        .header-logout:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: var(--danger);
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 100px 24px 120px; }
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .section h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+        .field { margin-bottom: 16px; }
+        .field:last-child { margin-bottom: 0; }
+        .field label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .field input, .field textarea, .field select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: "SF Mono", "Fira Code", "Roboto Mono", monospace;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); }
+        .field textarea { resize: vertical; min-height: 60px; }
+        .field-row { display: flex; gap: 16px; }
+        .field-row .field { flex: 1; }
+        .switch-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .switch-row:last-child { border-bottom: none; }
+        .switch-row label { font-size: 14px; color: var(--text-primary); margin-bottom: 0; }
+        .switch { position: relative; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--border); border-radius: 24px; transition: 0.2s;
+        }
+        .switch .slider:before {
+            content: ""; position: absolute;
+            height: 18px; width: 18px; left: 3px; bottom: 3px;
+            background: white; border-radius: 50%; transition: 0.2s;
+        }
+        .switch input:checked + .slider { background: var(--accent); }
+        .switch input:checked + .slider:before { transform: translateX(20px); }
+        .threshold-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .threshold-row:last-child { border-bottom: none; }
+        .threshold-row .row-label { flex: 1; font-size: 14px; color: var(--text-primary); }
+        .threshold-row .switch { margin-right: 4px; }
+        .threshold-row input[type="number"] {
+            width: 100px;
+            padding: 6px 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: "SF Mono", "Fira Code", "Roboto Mono", monospace;
+            text-align: right;
+            outline: none;
+        }
+        .threshold-row input[type="number"]:focus { border-color: var(--accent); }
+        .threshold-row select {
+            padding: 6px 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+        }
+        .threshold-row select:focus { border-color: var(--accent); }
+        .threshold-row .unit-label {
+            color: var(--text-muted);
+            font-size: 13px;
+            min-width: 20px;
+        }
+        .btn-group {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            max-width: 1200px;
+            width: calc(100% - 48px);
+        }
+        .btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-secondary); }
+        .btn-secondary:hover { background: var(--border-light); color: var(--text-primary); }
+        .toast {
+            position: fixed; top: 20px; right: 20px;
+            padding: 14px 24px; border-radius: 8px;
+            font-size: 14px; font-weight: 500; z-index: 1000;
+            opacity: 0; transform: translateY(-10px); transition: all 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #d1fae5; color: #065f46; }
+        .toast.error { background: #fee2e2; color: #991b1b; }
+
+        @media (max-width: 768px) {
+            .header { 
+                top: 16px; 
+                width: calc(100% - 32px);
+                padding: 12px 16px; 
+            }
+            .container { padding: 80px 16px 100px; }
+            .btn-group { 
+                bottom: 16px; 
+                width: calc(100% - 32px);
+                padding: 12px 16px; 
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a class="header-icon-btn" href="/" title="返回监控">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+        </a>
+        <h1>设置</h1>
+        <a class="header-icon-btn header-logout" href="/api/logout" title="退出登录">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+        </a>
+    </div>
+    <div class="container">
+        <div class="section">
+            <h2>基本设置</h2>
+            <div class="field">
+                <label>服务器名称</label>
+                <input type="text" id="name" placeholder="例如：我的服务器">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>认证配置</h2>
+            <div class="field-row">
+                <div class="field">
+                    <label>用户名</label>
+                    <input type="text" id="auth_username">
+                </div>
+                <div class="field">
+                    <label>密码</label>
+                    <input type="password" id="auth_password" placeholder="不修改请留空">
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>监控采集</h2>
+            <div class="field">
+                <label>采集间隔（秒）</label>
+                <input type="number" id="monitor_interval" min="1">
+            </div>
+            <div class="switch-row">
+                <label>内存监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_memory"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>CPU 监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_cpu"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>网络上传监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_network_up"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>网络下载监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_network_down"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>磁盘使用监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_disk_root"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>磁盘读写监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_disk_io"><span class="slider"></span></label>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>SMTP 邮件配置</h2>
+            <div class="field-row">
+                <div class="field">
+                    <label>SMTP 主机</label>
+                    <input type="text" id="smtp_host">
+                </div>
+                <div class="field">
+                    <label>SMTP 端口</label>
+                    <input type="number" id="smtp_port">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label>用户名</label>
+                    <input type="text" id="smtp_user">
+                </div>
+                <div class="field">
+                    <label>授权码</label>
+                    <input type="password" id="smtp_pass" placeholder="不修改请留空">
+                </div>
+            </div>
+            <div class="field">
+                <label>收件人（每行一个）</label>
+                <textarea id="smtp_to" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>告警规则</h2>
+            <div class="switch-row">
+                <label>启用告警</label>
+                <label class="switch"><input type="checkbox" id="alert_enabled"><span class="slider"></span></label>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">内存告警阈值</span>
+                <label class="switch"><input type="checkbox" id="alert_memory"><span class="slider"></span></label>
+                <input type="number" id="alert_memory_threshold" min="0" max="100" step="0.1">
+                <span class="unit-label">%</span>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">CPU 告警阈值</span>
+                <label class="switch"><input type="checkbox" id="alert_cpu"><span class="slider"></span></label>
+                <input type="number" id="alert_cpu_threshold" min="0" max="100" step="0.1">
+                <span class="unit-label">%</span>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">磁盘使用告警阈值</span>
+                <label class="switch"><input type="checkbox" id="alert_disk"><span class="slider"></span></label>
+                <input type="number" id="alert_disk_threshold" min="0" max="100" step="0.1">
+                <span class="unit-label">%</span>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">网络上传告警</span>
+                <label class="switch"><input type="checkbox" id="alert_network_up"><span class="slider"></span></label>
+                <input type="number" id="alert_network_up_threshold" min="0" step="any">
+                <select id="alert_network_up_unit"><option value="1048576" selected>MB</option><option value="1073741824">GB</option></select>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">网络下载告警</span>
+                <label class="switch"><input type="checkbox" id="alert_network_down"><span class="slider"></span></label>
+                <input type="number" id="alert_network_down_threshold" min="0" step="any">
+                <select id="alert_network_down_unit"><option value="1048576" selected>MB</option><option value="1073741824">GB</option></select>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">磁盘读取告警</span>
+                <label class="switch"><input type="checkbox" id="alert_disk_read"><span class="slider"></span></label>
+                <input type="number" id="alert_disk_read_threshold" min="0" step="any">
+                <select id="alert_disk_read_unit"><option value="1048576" selected>MB</option><option value="1073741824">GB</option></select>
+            </div>
+            <div class="threshold-row">
+                <span class="row-label">磁盘写入告警</span>
+                <label class="switch"><input type="checkbox" id="alert_disk_write"><span class="slider"></span></label>
+                <input type="number" id="alert_disk_write_threshold" min="0" step="any">
+                <select id="alert_disk_write_unit"><option value="1048576" selected>MB</option><option value="1073741824">GB</option></select>
+            </div>
+<div class="field" style="margin-top:16px">
+                <label>告警持续时间（秒）</label>
+                <input type="number" id="alert_duration" min="0">
+            </div>
+            <div class="field" style="margin-top:16px">
+                <label>告警最小间隔（秒）</label>
+                <input type="number" id="alert_interval" min="60">
+            </div>
+        </div>
+
+    </div>
+
+    <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+        <button class="btn btn-secondary" onclick="loadConfig()">重置</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function showToast(msg, type) {
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + type + ' show';
+            setTimeout(function() { t.className = 'toast'; }, 3000);
+        }
+
+        // Convert bytes to human-readable {value, unit} for display
+        function bytesToHuman(bytes) {
+            var units = [
+                {value: 1073741824, label: 'GB'},
+                {value: 1048576, label: 'MB'},
+                {value: 1024, label: 'KB'},
+                {value: 1, label: 'B'}
+            ];
+            for (var i = 0; i < units.length; i++) {
+                if (bytes >= units[i].value && bytes % units[i].value === 0) {
+                    return {value: bytes / units[i].value, unit: units[i].value};
+                }
+            }
+            return {value: bytes, unit: 1};
+        }
+
+        // Convert human-readable input back to bytes
+        function humanToBytes(inputVal, unitVal) {
+            return Math.round(parseFloat(inputVal) * parseInt(unitVal));
+        }
+
+        function loadConfig() {
+            fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+                document.getElementById('name').value = cfg.name || '';
+                document.getElementById('auth_username').value = cfg.auth.username || '';
+                document.getElementById('auth_password').value = '';
+
+                document.getElementById('monitor_interval').value = cfg.monitor.interval || 3;
+                document.getElementById('monitor_memory').checked = cfg.monitor.memory || false;
+                document.getElementById('monitor_cpu').checked = cfg.monitor.cpu || false;
+                document.getElementById('monitor_network_up').checked = cfg.monitor.network_up || false;
+                document.getElementById('monitor_network_down').checked = cfg.monitor.network_down || false;
+                document.getElementById('monitor_disk_root').checked = cfg.monitor.disk_root || false;
+                document.getElementById('monitor_disk_io').checked = cfg.monitor.disk_io || false;
+
+                document.getElementById('smtp_host').value = cfg.smtp.host || '';
+                document.getElementById('smtp_port').value = cfg.smtp.port || 587;
+                document.getElementById('smtp_user').value = cfg.smtp.user || '';
+                document.getElementById('smtp_pass').value = '';
+                document.getElementById('smtp_to').value = (cfg.smtp.to || []).join('\n');
+
+                document.getElementById('alert_enabled').checked = cfg.alert.enabled || false;
+                document.getElementById('alert_memory').checked = cfg.alert.memory || false;
+                document.getElementById('alert_memory_threshold').value = cfg.alert.memory_threshold || 90;
+                document.getElementById('alert_cpu').checked = cfg.alert.cpu || false;
+                document.getElementById('alert_cpu_threshold').value = cfg.alert.cpu_threshold || 90;
+                document.getElementById('alert_disk').checked = cfg.alert.disk || false;
+                document.getElementById('alert_disk_threshold').value = cfg.alert.disk_threshold || 85;
+
+                document.getElementById('alert_network_up').checked = cfg.alert.network_up || false;
+                var upH = bytesToHuman(cfg.alert.network_up_threshold || 0);
+                document.getElementById('alert_network_up_threshold').value = upH.value;
+                document.getElementById('alert_network_up_unit').value = upH.unit;
+
+                document.getElementById('alert_network_down').checked = cfg.alert.network_down || false;
+                var downH = bytesToHuman(cfg.alert.network_down_threshold || 0);
+                document.getElementById('alert_network_down_threshold').value = downH.value;
+                document.getElementById('alert_network_down_unit').value = downH.unit;
+
+                document.getElementById('alert_disk_read').checked = cfg.alert.disk_read || false;
+                var readH = bytesToHuman(cfg.alert.disk_read_threshold || 0);
+                document.getElementById('alert_disk_read_threshold').value = readH.value;
+                document.getElementById('alert_disk_read_unit').value = readH.unit;
+
+                document.getElementById('alert_disk_write').checked = cfg.alert.disk_write || false;
+                var writeH = bytesToHuman(cfg.alert.disk_write_threshold || 0);
+                document.getElementById('alert_disk_write_threshold').value = writeH.value;
+                document.getElementById('alert_disk_write_unit').value = writeH.unit;
+
+                document.getElementById('alert_interval').value = cfg.alert.interval || 300;
+                document.getElementById('alert_duration').value = cfg.alert.duration || 0;
+            }).catch(function(e) { showToast('加载配置失败', 'error'); });
+        }
+
+        function saveConfig() {
+            var toLines = document.getElementById('smtp_to').value.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+
+            var cfg = {
+                name: document.getElementById('name').value,
+                auth: {
+                    username: document.getElementById('auth_username').value,
+                    password: document.getElementById('auth_password').value
+                },
+                monitor: {
+                    interval: parseInt(document.getElementById('monitor_interval').value) || 3,
+                    memory: document.getElementById('monitor_memory').checked,
+                    cpu: document.getElementById('monitor_cpu').checked,
+                    network_up: document.getElementById('monitor_network_up').checked,
+                    network_down: document.getElementById('monitor_network_down').checked,
+                    disk_root: document.getElementById('monitor_disk_root').checked,
+                    disk_io: document.getElementById('monitor_disk_io').checked
+                },
+                smtp: {
+                    host: document.getElementById('smtp_host').value,
+                    port: parseInt(document.getElementById('smtp_port').value) || 587,
+                    user: document.getElementById('smtp_user').value,
+                    pass: document.getElementById('smtp_pass').value,
+                    to: toLines
+                },
+                alert: {
+                    enabled: document.getElementById('alert_enabled').checked,
+                    memory: document.getElementById('alert_memory').checked,
+                    memory_threshold: parseFloat(document.getElementById('alert_memory_threshold').value) || 90,
+                    cpu: document.getElementById('alert_cpu').checked,
+                    cpu_threshold: parseFloat(document.getElementById('alert_cpu_threshold').value) || 90,
+                    disk: document.getElementById('alert_disk').checked,
+                    disk_threshold: parseFloat(document.getElementById('alert_disk_threshold').value) || 85,
+                    network_up: document.getElementById('alert_network_up').checked,
+                    network_up_threshold: humanToBytes(document.getElementById('alert_network_up_threshold').value, document.getElementById('alert_network_up_unit').value),
+                    network_down: document.getElementById('alert_network_down').checked,
+                    network_down_threshold: humanToBytes(document.getElementById('alert_network_down_threshold').value, document.getElementById('alert_network_down_unit').value),
+                    disk_read: document.getElementById('alert_disk_read').checked,
+                    disk_read_threshold: humanToBytes(document.getElementById('alert_disk_read_threshold').value, document.getElementById('alert_disk_read_unit').value),
+                    disk_write: document.getElementById('alert_disk_write').checked,
+                    disk_write_threshold: humanToBytes(document.getElementById('alert_disk_write_threshold').value, document.getElementById('alert_disk_write_unit').value),
+                    interval: parseInt(document.getElementById('alert_interval').value) || 300,
+                    duration: parseInt(document.getElementById('alert_duration').value) || 0
+                }
+            };
+
+            fetch('/api/config', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(cfg)
+            }).then(function(r) { return r.json(); }).then(function(res) {
+                if (res.status === 'ok') {
+                    showToast('配置已保存并生效', 'success');
+                } else {
+                    showToast(res.message || '保存失败', 'error');
+                }
+            }).catch(function() { showToast('保存失败', 'error'); });
+        }
+
+        loadConfig();
+    </script>
+</body>
+</html>
