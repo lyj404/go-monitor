@@ -8,21 +8,22 @@ archives:
     format_overrides:
       - goos: linux
         format: deb
-    deb:
-      depends:
-        - libc6
-      section: utils
-      priority: optional
-      maintainer: lyj <lyj404@qq.com>
-      homepage: https://github.com/lyj404/go-monitor
-      scripts:
-        postinst: debian/postinst
-        prerm: debian/prerm
     files:
       - src: debian/go-monitor.service
         dst: lib/systemd/system/go-monitor.service
       - src: config.example.yaml
         dst: etc/go-monitor/config.yaml
+
+deb:
+  depends:
+    - libc6
+  section: utils
+  priority: optional
+  maintainer: lyj <lyj404@qq.com>
+  homepage: https://github.com/lyj404/go-monitor
+  scripts:
+    postinst: debian/postinst
+    prerm: debian/prerm
 
 builds:
   - id: go-monitor
