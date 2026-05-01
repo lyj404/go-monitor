@@ -27,14 +27,16 @@ nfpms:
     dependencies:
       - libc6
     bindir: /usr/bin
+    formats:
+      - deb
     contents:
       - src: debian/go-monitor.service
         dst: lib/systemd/system/go-monitor.service
       - src: config.example.yaml
         dst: etc/go-monitor/config.yaml
     scripts:
-      postinst: debian/postinst
-      prerm: debian/prerm
+      postinstall: debian/postinst
+      preremove: debian/prerm
 
 archives:
   - id: go-monitor
