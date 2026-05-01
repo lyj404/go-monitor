@@ -24,7 +24,7 @@ nfpms:
     license: Apache-2.0
     section: utils
     priority: optional
-    depends:
+    dependencies:
       - libc6
     bindir: /usr/bin
     contents:
@@ -32,10 +32,9 @@ nfpms:
         dst: lib/systemd/system/go-monitor.service
       - src: config.example.yaml
         dst: etc/go-monitor/config.yaml
-    deb:
-      scripts:
-        postinst: debian/postinst
-        prerm: debian/prerm
+    scripts:
+      postinst: debian/postinst
+      prerm: debian/prerm
 
 archives:
   - id: go-monitor
