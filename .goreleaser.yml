@@ -53,4 +53,4 @@ release:
   github:
     owner: lyj404
     name: go-monitor
-  draft: true
+  draft: false
