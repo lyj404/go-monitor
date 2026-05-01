@@ -5,7 +5,9 @@ case "$1" in
     configure)
         # Create config directory
         mkdir -p /etc/go-monitor/data
-        chmod 666 /etc/go-monitor/config.yaml
+        if [ -f /etc/go-monitor/config.yaml ]; then
+            chmod 666 /etc/go-monitor/config.yaml
+        fi
         chmod 755 /etc/go-monitor/data
 
         # Enable and start service if requested

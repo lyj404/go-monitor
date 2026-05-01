@@ -1,26 +1,38 @@
 # go-monitor
 
-轻量级系统资源监控工具，提供 Web 仪表盘和邮件告警功能。
+Linux 系统轻量级资源监控工具，提供 Web 仪表盘和邮件告警功能。
+
+## 界面预览
+
+| 登录页 | 首页 | 设置页 |
+|--------|------|--------|
+| ![登录页](img/login.png) | ![首页](img/index.png) | ![设置页](img/setting.png) |
 
 ## 功能特性
 
-- **实时监控**: CPU、内存、磁盘 I/O、网络流量
+- **实时监控**: CPU、内存、磁盘 I/O、网络流量（Linux）
 - **Web 仪表盘**: 通过浏览器查看当前和历史数据
 - **邮件告警**: 可配置 CPU、内存、磁盘使用阈值告警
 - **Systemd 集成**: 方便安装为 systemd 服务
 - **SQLite 存储**: 本地数据库存储历史数据
 
+## 支持平台
+
+- Linux (Debian/Ubuntu 等)
+
 ## 安装
 
 ### 从 Release 安装
 
-从 [GitHub Releases](https://github.com/lyj404/go-monitor/releases) 下载最新版本：
+从 [GitHub Releases](https://github.com/lyj404/go-monitor/releases) 下载 deb 包：
 
 ```bash
-# Debian/Ubuntu
 sudo dpkg -i go-monitor_*.deb
+```
 
-# 或解压 tarball
+或解压 tarball 并手动配置：
+
+```bash
 tar -xzf go-monitor_*.tar.gz
 cd go-monitor
 sudo cp go-monitor.service /lib/systemd/system/
@@ -59,7 +71,6 @@ nano config.yaml
 | smtp | to | 告警邮件接收者 |
 | alert | enabled | 启用/禁用告警 |
 | alert | memory_threshold | 内存使用率告警阈值 |
-| alert | cpu_threshold | CPU 使用率告警阈值 |
 | alert | disk_threshold | 磁盘使用率告警阈值 |
 
 ## 使用
@@ -88,14 +99,8 @@ sudo journalctl -u go-monitor -f
 ```bash
 # 编译
 go build
-
-# 运行测试
-go test ./...
-
-# 发布（需要 GitHub Token）
-goreleaser release
 ```
 
 ## 许可证
 
-MIT License
+Apache License 2.0

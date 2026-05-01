@@ -29,44 +29,46 @@
         }
         .header {
             background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-            padding: 16px 32px;
-            display: flex;
-            justify-content: space-between;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px 24px;
+            display: grid;
+            grid-template-columns: 36px 1fr 36px;
             align-items: center;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 1200px;
+            width: calc(100% - 48px);
             z-index: 100;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .header h1 { font-size: 20px; font-weight: 600; }
-        .header-actions { display: flex; gap: 12px; align-items: center; }
-        .btn-header {
-            padding: 7px 16px;
+        .header h1 { justify-self: center; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header-icon-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border: 1px solid var(--border-light);
+            color: var(--text-muted);
             transition: all 0.2s;
             text-decoration: none;
-            display: inline-block;
-            font-family: inherit;
         }
-        .btn-header-back {
-            background: var(--bg-secondary);
-            color: var(--text-secondary);
+        .header-icon-btn:hover { 
+            background: var(--bg-tertiary); 
+            color: var(--text-primary); 
         }
-        .btn-header-back:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-        .btn-header-logout {
-            background: transparent;
+        .header-logout {
             color: var(--danger);
-            border-color: var(--danger);
         }
-        .btn-header-logout:hover { background: var(--danger); color: #fff; }
-        .container { max-width: 800px; margin: 0 auto; padding: 80px 24px 100px; }
+        .header-logout:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: var(--danger);
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 100px 24px 120px; }
         .section {
             background: var(--bg-card);
             border: 1px solid var(--border-light);
@@ -169,17 +171,20 @@
         }
         .btn-group {
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
             background: var(--bg-card);
-            border-top: 1px solid var(--border);
-            padding: 16px 32px;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px 24px;
             display: flex;
             gap: 12px;
             justify-content: center;
             z-index: 100;
-            box-shadow: 0 -1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            max-width: 1200px;
+            width: calc(100% - 48px);
         }
         .btn {
             padding: 10px 24px;
@@ -206,19 +211,33 @@
         .toast.error { background: #fee2e2; color: #991b1b; }
 
         @media (max-width: 768px) {
-            .header { padding: 12px 16px; }
-            .container { padding: 70px 16px 90px; }
-            .btn-group { padding: 12px 16px; }
+            .header { 
+                top: 16px; 
+                width: calc(100% - 32px);
+                padding: 12px 16px; 
+            }
+            .container { padding: 80px 16px 100px; }
+            .btn-group { 
+                bottom: 16px; 
+                width: calc(100% - 32px);
+                padding: 12px 16px; 
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
+        <a class="header-icon-btn" href="/" title="返回监控">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+        </a>
         <h1>设置</h1>
-        <div class="header-actions">
-            <a class="btn-header btn-header-back" href="/">返回监控</a>
-            <a class="btn-header btn-header-logout" href="/api/logout">退出登录</a>
-        </div>
+        <a class="header-icon-btn header-logout" href="/api/logout" title="退出登录">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+        </a>
     </div>
     <div class="container">
         <div class="section">

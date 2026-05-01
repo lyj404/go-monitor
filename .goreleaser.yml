@@ -19,6 +19,8 @@ archives:
     files:
       - src: debian/go-monitor.service
         dst: lib/systemd/system/go-monitor.service
+      - src: config.example.yaml
+        dst: etc/go-monitor/config.yaml
 
 builds:
   - id: go-monitor
