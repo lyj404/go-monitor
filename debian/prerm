@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    removed|upgrade|failed-upgrade|abort-install|abort-upgrade)
+        # Stop and disable service
+        if [ -d /run/systemd/system ]; then
+            systemctl --no-reload disable go-monitor.service 2>/dev/null || true
+            systemctl stop go-monitor.service 2>/dev/null || true
+            systemctl daemon-reload
+        fi
+        ;;
+    purge)
+        # Remove configuration files
+        rm -rf /etc/go-monitor
+        ;;
+    *)
+        ;;
+esac

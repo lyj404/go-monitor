@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    configure)
+        # Create config directory
+        mkdir -p /etc/go-monitor/data
+        chmod 666 /etc/go-monitor/config.yaml
+        chmod 755 /etc/go-monitor/data
+
+        # Enable and start service if requested
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+            systemctl enable go-monitor.service
+            systemctl start go-monitor.service
+        fi
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        ;;
+esac

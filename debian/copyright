@@ -1,0 +1,7 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: go-monitor
+Upstream-Contact: lyj <lyj404@qq.com>
+
+Files: *
+Copyright: 2026 lyj <lyj404@qq.com>
+License: MIT

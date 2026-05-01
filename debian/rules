@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/go-monitor .
+
+override_dh_auto_install:
+	install -D -m 755 build/go-monitor debian/go-monitor/usr/bin/go-monitor
+	install -D -m 644 config.yaml debian/go-monitor/etc/go-monitor/config.yaml
+	install -D -m 644 debian/go-monitor.service debian/go-monitor/lib/systemd/system/go-monitor.service

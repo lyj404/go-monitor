@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>登录 - 服务器监控</title>
+        <style>
+            :root {
+                --bg-primary: #ffffff;
+                --bg-secondary: #f8f9fa;
+                --bg-tertiary: #e9ecef;
+                --text-primary: #1a1a1a;
+                --text-secondary: #495057;
+                --text-muted: #868e96;
+                --accent: #0d6efd;
+                --accent-dim: rgba(13, 110, 253, 0.1);
+                --border: #dee2e6;
+                --error: #dc3545;
+            }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+                background: var(--bg-primary);
+                background-image:
+                    radial-gradient(
+                        ellipse 80% 50% at 50% -20%,
+                        var(--accent-dim),
+                        transparent
+                    ),
+                    radial-gradient(
+                        circle at 100% 100%,
+                        rgba(34, 211, 238, 0.05),
+                        transparent 40%
+                    );
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--text-primary);
+            }
+            .login-container {
+                width: 100%;
+                max-width: 380px;
+                padding: 20px;
+            }
+            .login-card {
+                background: var(--bg-secondary);
+                border: 1px solid var(--border-light);
+                border-radius: 16px;
+                padding: 40px 32px;
+                box-shadow:
+                    0 0 0 1px rgba(255, 255, 255, 0.03),
+                    0 20px 50px -12px rgba(0, 0, 0, 0.5);
+            }
+            .brand {
+                text-align: center;
+                margin-bottom: 36px;
+            }
+            .brand-icon {
+                width: 48px;
+                height: 48px;
+                margin: 0 auto 16px;
+                background: var(--accent-dim);
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .brand-icon svg {
+                width: 24px;
+                height: 24px;
+                stroke: var(--accent);
+            }
+            .brand h1 {
+                font-size: 20px;
+                font-weight: 600;
+                color: var(--text-primary);
+                letter-spacing: -0.02em;
+            }
+            .brand p {
+                font-size: 13px;
+                color: var(--text-muted);
+                margin-top: 6px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            .form-group label {
+                display: block;
+                font-size: 13px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin-bottom: 8px;
+            }
+            .input-wrapper {
+                position: relative;
+            }
+            .input-wrapper input {
+                width: 100%;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-light);
+                border-radius: 8px;
+                padding: 12px 14px;
+                font-size: 14px;
+                color: var(--text-primary);
+                outline: none;
+                transition: all 0.2s ease;
+                font-family: inherit;
+            }
+            .input-wrapper input::placeholder {
+                color: var(--text-muted);
+            }
+            .input-wrapper input:focus {
+                border-color: var(--accent);
+                box-shadow: 0 0 0 3px var(--accent-dim);
+            }
+            .input-wrapper input[type="password"] {
+                padding-right: 44px;
+            }
+            .toggle-pwd {
+                position: absolute;
+                right: 14px;
+                top: 50%;
+                transform: translateY(-50%);
+                cursor: pointer;
+                color: var(--text-muted);
+                font-size: 16px;
+                user-select: none;
+                transition: color 0.2s;
+            }
+            .toggle-pwd:hover {
+                color: var(--text-secondary);
+            }
+            button {
+                width: 100%;
+                padding: 14px;
+                background: var(--accent);
+                color: var(--bg-primary);
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-family: inherit;
+                margin-top: 8px;
+            }
+            button:hover {
+                background: #06b6d4;
+                transform: translateY(-1px);
+            }
+            button:active {
+                transform: translateY(0);
+            }
+            .error {
+                color: var(--error);
+                font-size: 13px;
+                margin-top: 16px;
+                text-align: center;
+                display: none;
+                padding: 10px;
+                background: rgba(248, 113, 113, 0.1);
+                border-radius: 6px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-card">
+                <div class="brand">
+                    <div class="brand-icon">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <rect x="2" y="3" width="20" height="14" rx="2" />
+                            <line x1="8" y1="21" x2="16" y2="21" />
+                            <line x1="12" y1="17" x2="12" y2="21" />
+                        </svg>
+                    </div>
+                    <h1>服务器监控</h1>
+                    <p>System Monitor Dashboard</p>
+                </div>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <div class="input-wrapper">
+                            <input
+                                type="text"
+                                name="username"
+                                id="username"
+                                placeholder="请输入用户名"
+                                required
+                            />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <div class="input-wrapper">
+                            <input
+                                type="password"
+                                name="password"
+                                id="password"
+                                placeholder="请输入密码"
+                                required
+                            />
+                            <span class="toggle-pwd" onclick="togglePassword()">
+                                <svg
+                                    id="eyeIcon"
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path
+                                        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                                    />
+                                    <circle cx="12" cy="12" r="3" />
+                                </svg>
+                            </span>
+                        </div>
+                    </div>
+                    <div
+                        class="remember-me"
+                        style="
+                            margin-bottom: 16px;
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            font-size: 13px;
+                            color: var(--text-secondary);
+                        "
+                    >
+                        <input
+                            type="checkbox"
+                            id="rememberMe"
+                            style="width: auto; margin: 0"
+                        />
+                        <label
+                            for="rememberMe"
+                            style="display: inline; margin: 0; cursor: pointer"
+                            >记住我</label
+                        >
+                    </div>
+                    <button type="submit">登录</button>
+                    <div class="error" id="error"></div>
+                </form>
+            </div>
+        </div>
+        <script>
+            // 页面加载时自动填充用户名
+            const savedUsername = localStorage.getItem("monitor_username");
+            if (savedUsername) {
+                document.getElementById("username").value = savedUsername;
+                document.getElementById("rememberMe").checked = true;
+            }
+
+            let showPassword = false;
+            function togglePassword() {
+                const pwd = document.getElementById("password");
+                const eye = document.getElementById("eyeIcon");
+                showPassword = !showPassword;
+                pwd.type = showPassword ? "text" : "password";
+                eye.innerHTML = showPassword
+                    ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+                    : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+            }
+
+            document
+                .getElementById("loginForm")
+                .addEventListener("submit", async (e) => {
+                    e.preventDefault();
+                    const username = document.getElementById("username").value;
+                    const password = document.getElementById("password").value;
+                    const remember =
+                        document.getElementById("rememberMe").checked;
+
+                    if (remember) {
+                        localStorage.setItem("monitor_username", username);
+                    } else {
+                        localStorage.removeItem("monitor_username");
+                    }
+
+                    const resp = await fetch("/api/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ username, password, remember }),
+                    });
+                    if (resp.ok) {
+                        location.href = "/";
+                    } else {
+                        let errorMsg = "登录失败，请重试";
+                        if (resp.status === 401) {
+                            errorMsg = "用户名或密码错误";
+                        } else if (resp.status === 429) {
+                            errorMsg = "尝试次数过多，请 5 分钟后再试";
+                        } else if (resp.status === 400) {
+                            errorMsg = "请求格式错误";
+                        }
+                        const errEl = document.getElementById("error");
+                        errEl.textContent = errorMsg;
+                        errEl.style.display = "block";
+                    }
+                });
+        </script>
+    </body>
+</html>

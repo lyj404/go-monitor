@@ -1,0 +1,39 @@
+name: Server
+server:
+  port: 9527
+auth:
+  username: admin
+  password: your_password_here
+monitor:
+  interval: 3
+  memory: true
+  cpu: true
+  network_up: true
+  network_down: true
+  disk_root: true
+  disk_io: true
+smtp:
+  host: smtp.qq.com
+  port: 587
+  user: your_email@qq.com
+  pass: your_password_here
+  to:
+    - your_email@example.com
+alert:
+  enabled: true
+  duration: 30
+  memory: true
+  memory_threshold: 90
+  cpu: true
+  cpu_threshold: 90
+  disk: true
+  disk_threshold: 90
+  network_up: false
+  network_up_threshold: 104857600
+  network_down: false
+  network_down_threshold: 104857600
+  disk_read: false
+  disk_read_threshold: 104857600
+  disk_write: false
+  disk_write_threshold: 104857600
+  interval: 600

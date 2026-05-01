@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务器监控</title>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --bg-card: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #495057;
+            --text-muted: #868e96;
+            --accent: #0d6efd;
+            --accent-subtle: rgba(13, 110, 253, 0.1);
+            --accent-green: #198754;
+            --accent-amber: #d68a00;
+            --accent-rose: #dc3545;
+            --border: rgba(0,0,0,0.08);
+            --border-light: rgba(0,0,0,0.12);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg-primary);
+            background-image: 
+                radial-gradient(ellipse 60% 40% at 50% -10%, var(--accent-subtle), transparent),
+                radial-gradient(circle at 100% 0%, rgba(34,211,238,0.03), transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding: 20px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-subtle);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header-icon svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--accent);
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .status {
+            font-size: 13px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .logout-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .settings-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 6px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .settings-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            border-color: var(--border-light);
+            transform: translateY(-2px);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .card-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+        .card-icon.memory { background: rgba(74, 222, 128, 0.15); }
+        .card-icon.memory svg { stroke: var(--accent-green); }
+        .card-icon.cpu { background: rgba(34, 211, 238, 0.15); }
+        .card-icon.cpu svg { stroke: var(--accent); }
+        .card-icon.network-up { background: rgba(251, 191, 36, 0.15); }
+        .card-icon.network-up svg { stroke: var(--accent-amber); }
+        .card-icon.network-down { background: rgba(251, 113, 133, 0.15); }
+        .card-icon.network-down svg { stroke: var(--accent-rose); }
+        .card-icon.disk { background: rgba(167, 139, 250, 0.15); }
+        .card-icon.disk svg { stroke: #a78bfa; }
+        .card-icon.disk-read { background: rgba(52, 211, 153, 0.15); }
+        .card-icon.disk-read svg { stroke: #34d399; }
+        .card-icon.disk-write { background: rgba(251, 146, 60, 0.15); }
+        .card-icon.disk-write svg { stroke: #fb923c; }
+        .card-icon.self-mem { background: rgba(96, 165, 250, 0.15); }
+        .card-icon.self-mem svg { stroke: #60a5fa; }
+        
+        .card .value {
+            font-family: "SF Mono", "Fira Code", "Roboto Mono", monospace;
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            letter-spacing: -0.02em;
+        }
+        .card .detail {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .progress {
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            margin-top: 16px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+        .progress-bar.low { background: var(--accent-green); }
+        .progress-bar.medium { background: var(--accent-amber); }
+        .progress-bar.high { background: var(--accent-rose); }
+        
+        .history-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .history-section h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .history-section h2 svg {
+            width: 18px;
+            height: 18px;
+            stroke: var(--accent);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        td {
+            padding: 14px 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        td:first-child {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        tr:hover td {
+            background: rgba(255,255,255,0.02);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        
+        @media (max-width: 768px) {
+            body { padding: 16px; }
+            .header { padding: 16px; flex-direction: column; gap: 16px; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <div class="header-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2"/>
+                        <line x1="8" y1="21" x2="16" y2="21"/>
+                        <line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                </div>
+                <h1 id="serverName">服务器监控面板</h1>
+            </div>
+            <div class="header-right">
+                <div class="status">
+                    <span class="status-dot"></span>
+                    <span>实时监控中</span>
+                </div>
+                <a class="settings-btn" href="/settings" title="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>
+                <button class="logout-btn" onclick="location.href='/api/logout'">退出登录</button>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">内存使用</span>
+                    <div class="card-icon memory">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="4" y="4" width="16" height="16" rx="2"/>
+                            <rect x="9" y="9" width="6" height="6"/>
+                            <line x1="9" y1="1" x2="9" y2="4"/>
+                            <line x1="15" y1="1" x2="15" y2="4"/>
+                            <line x1="9" y1="20" x2="9" y2="23"/>
+                            <line x1="15" y1="20" x2="15" y2="23"/>
+                            <line x1="20" y1="9" x2="23" y2="9"/>
+                            <line x1="20" y1="14" x2="23" y2="14"/>
+                            <line x1="1" y1="9" x2="4" y2="9"/>
+                            <line x1="1" y1="14" x2="4" y2="14"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="memUsage">--%</div>
+                <div class="detail" id="memDetail">-- / -- GB</div>
+                <div class="progress"><div class="progress-bar" id="memBar" style="width:0%"></div></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">CPU 使用</span>
+                    <div class="card-icon cpu">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="4" y="4" width="16" height="16" rx="2"/>
+                            <rect x="9" y="9" width="6" height="6"/>
+                            <line x1="9" y1="1" x2="9" y2="4"/>
+                            <line x1="15" y1="1" x2="15" y2="4"/>
+                            <line x1="9" y1="20" x2="9" y2="23"/>
+                            <line x1="15" y1="20" x2="15" y2="23"/>
+                            <line x1="20" y1="9" x2="23" y2="9"/>
+                            <line x1="20" y1="14" x2="23" y2="14"/>
+                            <line x1="1" y1="9" x2="4" y2="9"/>
+                            <line x1="1" y1="14" x2="4" y2="14"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="cpuUsage">--%</div>
+                <div class="detail">处理器负载</div>
+                <div class="progress"><div class="progress-bar" id="cpuBar" style="width:0%"></div></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">网络上传</span>
+                    <div class="card-icon network-up">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="19" x2="12" y2="5"/>
+                            <polyline points="5 12 12 5 19 12"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="netUpload">--</div>
+                <div class="detail" id="netUploadUnit">字节/3秒</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">网络下载</span>
+                    <div class="card-icon network-down">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <polyline points="19 12 12 19 5 12"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="netDownload">--</div>
+                <div class="detail" id="netDownloadUnit">字节/3秒</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">程序内存</span>
+                    <div class="card-icon self-mem">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="6" width="20" height="12" rx="2"/>
+                            <line x1="6" y1="10" x2="6" y2="10"/>
+                            <line x1="10" y1="10" x2="10" y2="10"/>
+                            <line x1="14" y1="10" x2="14" y2="10"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="selfMem">--</div>
+                <div class="detail">RSS</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">磁盘使用</span>
+                    <div class="card-icon disk">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="diskUsage">--%</div>
+                <div class="detail" id="diskDetail">-- / -- GB</div>
+                <div class="progress"><div class="progress-bar" id="diskBar" style="width:0%"></div></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">磁盘读取</span>
+                    <div class="card-icon disk-read">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="diskRead">--</div>
+                <div class="detail" id="diskReadUnit">字节/3秒</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">磁盘写入</span>
+                    <div class="card-icon disk-write">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 10 12 15 7 10"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="diskWrite">--</div>
+                <div class="detail" id="diskWriteUnit">字节/3秒</div>
+            </div>
+        </div>
+        
+        <div class="history-section">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                每日网络流量
+            </h2>
+            <table>
+                <thead><tr><th>日期</th><th>上传</th><th>下载</th></tr></thead>
+                <tbody id="dailyTable"><tr><td colspan="3" class="empty-state">暂无数据</td></tr></tbody>
+            </table>
+        </div>
+        
+        <div class="history-section">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                每月网络流量
+            </h2>
+            <table>
+                <thead><tr><th>月份</th><th>上传</th><th>下载</th></tr></thead>
+                <tbody id="monthlyTable"><tr><td colspan="3" class="empty-state">暂无数据</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        function formatBytes(bytes) {
+            if (typeof bytes !== 'number' || isNaN(bytes)) return '--';
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B','KB','MB','GB','TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+        }
+        
+        function getProgressColor(percent) {
+            if (percent < 50) return 'low';
+            if (percent < 80) return 'medium';
+            return 'high';
+        }
+        
+        async function loadServerName() {
+            try {
+                const resp = await fetch('/api/config');
+                const cfg = await resp.json();
+                if (cfg.name && cfg.name.trim() !== '') {
+                    document.getElementById('serverName').textContent = cfg.name;
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function loadMetrics() {
+            try {
+                const resp = await fetch('/api/metrics');
+                const data = await resp.json();
+                
+                if (data.memory) {
+                    const mem = data.memory;
+                    const memUsage = mem.usage.toFixed(1);
+                    document.getElementById('memUsage').textContent = memUsage + '%';
+                    document.getElementById('memDetail').textContent = formatBytes(mem.used) + ' / ' + formatBytes(mem.total);
+                    const bar = document.getElementById('memBar');
+                    bar.style.width = mem.usage + '%';
+                    bar.className = 'progress-bar ' + getProgressColor(mem.usage);
+                }
+                
+                if (data.cpu) {
+                    const cpuUsage = data.cpu.usage.toFixed(1);
+                    document.getElementById('cpuUsage').textContent = cpuUsage + '%';
+                    const bar = document.getElementById('cpuBar');
+                    bar.style.width = data.cpu.usage + '%';
+                    bar.className = 'progress-bar ' + getProgressColor(data.cpu.usage);
+                }
+                
+                if (data.network) {
+                    document.getElementById('netUpload').textContent = formatBytes(data.network.upload);
+                    document.getElementById('netDownload').textContent = formatBytes(data.network.download);
+                    if (data.interval) {
+                        var unitText = '字节/' + data.interval + '秒';
+                        document.getElementById('netUploadUnit').textContent = unitText;
+                        document.getElementById('netDownloadUnit').textContent = unitText;
+                    }
+                }
+                
+                if (data.disk) {
+                    const disk = data.disk;
+                    const diskUsage = disk.usage.toFixed(1);
+                    document.getElementById('diskUsage').textContent = diskUsage + '%';
+                    document.getElementById('diskDetail').textContent = formatBytes(disk.used) + ' / ' + formatBytes(disk.total);
+                    const bar = document.getElementById('diskBar');
+                    bar.style.width = disk.usage + '%';
+                    bar.className = 'progress-bar ' + getProgressColor(disk.usage);
+                }
+
+                if (data.disk_io) {
+                    document.getElementById('diskRead').textContent = formatBytes(data.disk_io.read);
+                    document.getElementById('diskWrite').textContent = formatBytes(data.disk_io.write);
+                    if (data.interval) {
+                        var diskUnitText = '字节/' + data.interval + '秒';
+                        document.getElementById('diskReadUnit').textContent = diskUnitText;
+                        document.getElementById('diskWriteUnit').textContent = diskUnitText;
+                    }
+
+                if (data.self_mem) {
+                    document.getElementById('selfMem').textContent = formatBytes(data.self_mem.rss * 1024);
+                }
+                }
+            } catch(e) { console.error(e); }
+        }
+        
+        async function loadHistory() {
+            try {
+                const [daily, monthly] = await Promise.all([
+                    fetch('/api/history/daily').then(r => r.json()),
+                    fetch('/api/history/monthly').then(r => r.json())
+                ]);
+                
+                if (daily.length > 0) {
+                    document.getElementById('dailyTable').innerHTML = daily.map(d => 
+                        '<tr><td>'+d.date+'</td><td>'+formatBytes(d.upload)+'</td><td>'+formatBytes(d.download)+'</td></tr>'
+                    ).join('');
+                }
+                
+                if (monthly.length > 0) {
+                    document.getElementById('monthlyTable').innerHTML = monthly.map(m => 
+                        '<tr><td>'+m.year_month+'</td><td>'+formatBytes(m.upload)+'</td><td>'+formatBytes(m.download)+'</td></tr>'
+                    ).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+        
+        loadServerName();
+        loadMetrics();
+        loadHistory();
+        var metricsInterval = setInterval(loadMetrics, 3000);
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                clearInterval(metricsInterval);
+            } else {
+                loadMetrics();
+                metricsInterval = setInterval(loadMetrics, (window._monitorInterval || 3) * 1000);
+            }
+        });
+    </script>
+</body>

@@ -1,0 +1,54 @@
+archives:
+  - id: go-monitor
+    builds:
+      - go-monitor
+    format: tar.gz
+    format_overrides:
+      - goos: linux
+        format: deb
+    deb:
+      depends:
+        - libc6
+      section: utils
+      priority: optional
+      maintainer: lyj <lyj404@qq.com>
+      homepage: https://github.com/lyj404/go-monitor
+      scripts:
+        postinst: debian/postinst
+        prerm: debian/prerm
+    files:
+      - src: debian/go-monitor.service
+        dst: lib/systemd/system/go-monitor.service
+
+builds:
+  - id: go-monitor
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    goamd64:
+      - v3
+    binary: go-monitor
+    env:
+      - CGO_ENABLED=0
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: lyj404
+    name: go-monitor
+  draft: true
