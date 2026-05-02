@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -165,7 +166,7 @@ func (s *DB) Close() error {
 	return s.db.Close()
 }
 
-func (s *DB) StartHourlyTasks(stopCh <-chan struct{}) {
+func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, retentionDays int) {
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -182,6 +183,14 @@ func (s *DB) StartHourlyTasks(stopCh <-chan struct{}) {
 
 				if err := s.SaveMonthlyNetwork(); err != nil {
 					log.Println("保存月度网络汇总失败:", err)
+				}
+
+				if retentionDays > 0 {
+					if err := s.CleanOldData(retentionDays); err != nil {
+						log.Println("清理历史数据失败:", err)
+					} else {
+						log.Printf("已清理 %d 天前的历史数据", retentionDays)
+					}
 				}
 			case <-stopCh:
 				return
@@ -206,4 +215,14 @@ func (s *DB) GetMonthlyNetwork(startMonth, endMonth string) ([]MonthlyNetwork, e
 		result = append(result, m)
 	}
 	return result, nil
+}
+
+func (s *DB) CleanOldData(retentionDays int) error {
+	sql := fmt.Sprintf("DELETE FROM daily_network WHERE date < date('now', '-%d days')", retentionDays)
+	if _, err := s.db.Exec(sql); err != nil {
+		return err
+	}
+
+	_, err := s.db.Exec("DELETE FROM monthly_network WHERE year_month < date('now', '-12 months')")
+	return err
 }

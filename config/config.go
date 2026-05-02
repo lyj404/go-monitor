@@ -51,7 +51,7 @@ type SMTPConfig struct {
 
 type AlertConfig struct {
 	Enabled          bool    `yaml:"enabled"`
-	Duration         int     `yaml:"duration"` // 持续时间(秒)
+	Duration         int     `yaml:"duration"`
 	Memory           bool    `yaml:"memory"`
 	MemoryThreshold  float64 `yaml:"memory_threshold"`
 	CPU              bool    `yaml:"cpu"`
@@ -67,6 +67,7 @@ type AlertConfig struct {
 	DiskWrite        bool    `yaml:"disk_write"`
 	DiskWriteThreshold int64 `yaml:"disk_write_threshold"`
 	Interval         int     `yaml:"interval"`
+	RetentionDays    int     `yaml:"retention_days"`
 }
 
 func Load(path string) (*Config, error) {
@@ -92,6 +93,10 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Alert.Interval == 0 {
 		cfg.Alert.Interval = 300
+	}
+
+	if cfg.Alert.RetentionDays == 0 {
+		cfg.Alert.RetentionDays = 7
 	}
 
 	return &cfg, nil
@@ -142,6 +147,7 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"disk_write_threshold":   c.Alert.DiskWriteThreshold,
 			"interval":               c.Alert.Interval,
 			"duration":               c.Alert.Duration,
+			"retention_days":        c.Alert.RetentionDays,
 		},
 	}
 }
@@ -273,6 +279,9 @@ if v, ok := alert["interval"].(float64); ok && v > 0 {
 		}
 		if v, ok := alert["duration"].(float64); ok && v >= 0 {
 			c.Alert.Duration = int(v)
+		}
+		if v, ok := alert["retention_days"].(float64); ok && v > 0 {
+			c.Alert.RetentionDays = int(v)
 		}
 	}
 

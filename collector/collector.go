@@ -72,49 +72,82 @@ func (c *Collector) NotifyIntervalChanged() {
 }
 
 func (c *Collector) collect() {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var m Metrics
 
 	if c.cfg.Monitor.Memory {
-		mem, err := CollectMemory()
-		if err == nil {
-			m.Memory = mem
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if mem, err := CollectMemory(); err == nil {
+				mu.Lock()
+				m.Memory = mem
+				mu.Unlock()
+			}
+		}()
 	}
 
 	if c.cfg.Monitor.CPU {
-		cpu, err := CollectCPU()
-		if err == nil {
-			m.CPU = cpu
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if cpu, err := CollectCPU(); err == nil {
+				mu.Lock()
+				m.CPU = cpu
+				mu.Unlock()
+			}
+		}()
 	}
 
 	if c.cfg.Monitor.NetworkUp || c.cfg.Monitor.NetworkDown {
-		net, err := CollectNetwork()
-		if err == nil {
-			m.Network = net
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if net, err := CollectNetwork(); err == nil {
+				mu.Lock()
+				m.Network = net
+				mu.Unlock()
+			}
+		}()
 	}
 
 	if c.cfg.Monitor.DiskRoot {
-		disk, err := CollectDisk()
-		if err == nil {
-			m.Disk = disk
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if disk, err := CollectDisk(); err == nil {
+				mu.Lock()
+				m.Disk = disk
+				mu.Unlock()
+			}
+		}()
 	}
 
 	if c.cfg.Monitor.DiskIO {
-		dio, err := CollectDiskIO()
-		if err == nil {
-			m.DiskIO = dio
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if dio, err := CollectDiskIO(); err == nil {
+				mu.Lock()
+				m.DiskIO = dio
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if selfMem, err := CollectSelfMem(); err == nil {
+			mu.Lock()
+			m.SelfMem = selfMem
+			mu.Unlock()
 		}
-	}
+	}()
 
-	selfMem, err := CollectSelfMem()
-	if err == nil {
-		m.SelfMem = selfMem
-	}
+	wg.Wait()
 
-	// Single lock write for all metrics
 	c.mu.Lock()
 	c.metrics = m
 	c.mu.Unlock()

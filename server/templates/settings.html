@@ -378,6 +378,10 @@
                 <label>告警最小间隔（秒）</label>
                 <input type="number" id="alert_interval" min="60">
             </div>
+            <div class="field" style="margin-top:16px">
+                <label>历史数据保留天数</label>
+                <input type="number" id="alert_retention_days" min="1" placeholder="7">
+            </div>
         </div>
 
     </div>
@@ -468,6 +472,7 @@
 
                 document.getElementById('alert_interval').value = cfg.alert.interval || 300;
                 document.getElementById('alert_duration').value = cfg.alert.duration || 0;
+                document.getElementById('alert_retention_days').value = cfg.alert.retention_days || 7;
             }).catch(function(e) { showToast('加载配置失败', 'error'); });
         }
 
@@ -513,7 +518,8 @@
                     disk_write: document.getElementById('alert_disk_write').checked,
                     disk_write_threshold: humanToBytes(document.getElementById('alert_disk_write_threshold').value, document.getElementById('alert_disk_write_unit').value),
                     interval: parseInt(document.getElementById('alert_interval').value) || 300,
-                    duration: parseInt(document.getElementById('alert_duration').value) || 0
+                    duration: parseInt(document.getElementById('alert_duration').value) || 0,
+                    retention_days: parseInt(document.getElementById('alert_retention_days').value) || 7
                 }
             };
 

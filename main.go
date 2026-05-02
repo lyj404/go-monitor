@@ -73,7 +73,7 @@ func main() {
 
 	// Start hourly tasks with shutdown context as stop signal
 	if db != nil {
-		db.StartHourlyTasks(ctx.Done())
+		db.StartHourlyTasks(ctx.Done(), cfg.Alert.RetentionDays)
 	}
 
 	go func() {

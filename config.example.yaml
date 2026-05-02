@@ -37,3 +37,4 @@ alert:
   disk_write: false
   disk_write_threshold: 104857600
   interval: 600
+  retention_days: 7
