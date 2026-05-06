@@ -116,8 +116,14 @@ func (s *DB) SaveHourlyNetwork(upload, download int64) error {
 	return err
 }
 
-func (s *DB) GetDailyNetwork(startDate, endDate string) ([]DailyNetwork, error) {
-	rows, err := s.db.Query(`SELECT id, date, upload, download, created_at FROM daily_network WHERE date >= ? AND date <= ? ORDER BY date DESC`, startDate, endDate)
+func (s *DB) GetDailyNetwork(startDate, endDate string, limit int) ([]DailyNetwork, error) {
+	query := `SELECT id, date, upload, download, created_at FROM daily_network WHERE date >= ? AND date <= ?`
+	if limit > 0 {
+		query += fmt.Sprintf(" ORDER BY date DESC LIMIT %d", limit)
+	} else {
+		query += " ORDER BY date DESC"
+	}
+	rows, err := s.db.Query(query, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
@@ -141,15 +147,19 @@ func (s *DB) SaveMonthlyNetwork() error {
 	startDate := yearMonth + "-01"
 	endDate := now.Format("2006-01-02")
 
-	dailies, err := s.GetDailyNetwork(startDate, endDate)
-	if err != nil || len(dailies) == 0 {
+	var totalUpload, totalDownload int64
+	err := s.db.QueryRow(`
+		SELECT COALESCE(SUM(upload), 0), COALESCE(SUM(download), 0)
+		FROM daily_network
+		WHERE date >= ? AND date <= ?
+	`, startDate, endDate).Scan(&totalUpload, &totalDownload)
+
+	if err != nil {
 		return err
 	}
 
-	var totalUpload, totalDownload int64
-	for _, d := range dailies {
-		totalUpload += d.Upload
-		totalDownload += d.Download
+	if totalUpload == 0 && totalDownload == 0 {
+		return nil
 	}
 
 	_, err = s.db.Exec(`
@@ -201,8 +211,14 @@ func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, retentionDays int) {
 	}()
 }
 
-func (s *DB) GetMonthlyNetwork(startMonth, endMonth string) ([]MonthlyNetwork, error) {
-	rows, err := s.db.Query(`SELECT id, year_month, upload, download, created_at FROM monthly_network WHERE year_month >= ? AND year_month <= ? ORDER BY year_month DESC`, startMonth, endMonth)
+func (s *DB) GetMonthlyNetwork(startMonth, endMonth string, limit int) ([]MonthlyNetwork, error) {
+	query := `SELECT id, year_month, upload, download, created_at FROM monthly_network WHERE year_month >= ? AND year_month <= ?`
+	if limit > 0 {
+		query += fmt.Sprintf(" ORDER BY year_month DESC LIMIT %d", limit)
+	} else {
+		query += " ORDER BY year_month DESC"
+	}
+	rows, err := s.db.Query(query, startMonth, endMonth)
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +241,6 @@ func (s *DB) CleanOldData(retentionDays int) error {
 		return err
 	}
 
-	_, err := s.db.Exec("DELETE FROM monthly_network WHERE year_month < date('now', '-12 months')")
+	_, err := s.db.Exec("DELETE FROM monthly_network WHERE year_month < strftime('%Y-%m', 'now', '-12 months')")
 	return err
 }

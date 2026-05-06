@@ -41,7 +41,7 @@ func main() {
 
 	var al *alerter.Alerter
 	if cfg.Alert.Enabled {
-		al = alerter.New(cfg)
+		al = alerter.New()
 		log.Println("报警功能已启用")
 	} else {
 		log.Println("报警功能未启用")

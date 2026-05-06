@@ -14,73 +14,71 @@ import (
 )
 
 type Alerter struct {
-	cfg                 *config.Config
 	conditionStartTimes map[string]time.Time
 	lastSent            map[string]time.Time
 	mu                  sync.Mutex
 }
 
-func New(cfg *config.Config) *Alerter {
+func New() *Alerter {
 	return &Alerter{
-		cfg:                 cfg,
 		conditionStartTimes: make(map[string]time.Time),
 		lastSent:            make(map[string]time.Time),
 	}
 }
 
-func (a *Alerter) Check(m collector.Metrics) {
-	if !a.cfg.Alert.Enabled {
+func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Config) {
+	if !cfg.Alert.Enabled {
 		return
 	}
-	duration := time.Duration(a.cfg.Alert.Duration) * time.Second
+	duration := time.Duration(cfg.Alert.Duration) * time.Second
 
-	if a.cfg.Alert.CPU && m.CPU != nil {
-		conditionMet := m.CPU.Usage >= a.cfg.Alert.CPUThreshold
+	if cfg.Alert.CPU && m.CPU != nil {
+		conditionMet := m.CPU.Usage >= cfg.Alert.CPUThreshold
 		a.checkCondition("cpu", conditionMet, duration, func() {
-			a.send("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, a.cfg.Alert.CPUThreshold))
+			a.send("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), cfg)
 		})
 	}
 
-	if a.cfg.Alert.Memory && m.Memory != nil {
-		conditionMet := m.Memory.Usage >= a.cfg.Alert.MemoryThreshold
+	if cfg.Alert.Memory && m.Memory != nil {
+		conditionMet := m.Memory.Usage >= cfg.Alert.MemoryThreshold
 		a.checkCondition("memory", conditionMet, duration, func() {
-			a.send("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, a.cfg.Alert.MemoryThreshold))
+			a.send("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), cfg)
 		})
 	}
 
-	if a.cfg.Alert.Disk && m.Disk != nil {
-		conditionMet := m.Disk.Usage >= a.cfg.Alert.DiskThreshold
+	if cfg.Alert.Disk && m.Disk != nil {
+		conditionMet := m.Disk.Usage >= cfg.Alert.DiskThreshold
 		a.checkCondition("disk", conditionMet, duration, func() {
-			a.send("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, a.cfg.Alert.DiskThreshold))
+			a.send("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), cfg)
 		})
 	}
 
 	if m.Network != nil {
-		if a.cfg.Alert.NetworkUp {
-			conditionMet := m.Network.Upload >= a.cfg.Alert.NetworkUpThreshold
+		if cfg.Alert.NetworkUp {
+			conditionMet := m.Network.Upload >= cfg.Alert.NetworkUpThreshold
 			a.checkCondition("upload", conditionMet, duration, func() {
-				a.send("网络上传", fmt.Sprintf("上传速率 %s 超过阈值 %s", formatBytes(m.Network.Upload), formatBytes(a.cfg.Alert.NetworkUpThreshold)))
+				a.send("网络上传", fmt.Sprintf("上传速率 %s 超过阈值 %s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), cfg)
 			})
 		}
-		if a.cfg.Alert.NetworkDown {
-			conditionMet := m.Network.Download >= a.cfg.Alert.NetworkDownThreshold
+		if cfg.Alert.NetworkDown {
+			conditionMet := m.Network.Download >= cfg.Alert.NetworkDownThreshold
 			a.checkCondition("download", conditionMet, duration, func() {
-				a.send("网络下载", fmt.Sprintf("下载速率 %s 超过阈值 %s", formatBytes(m.Network.Download), formatBytes(a.cfg.Alert.NetworkDownThreshold)))
+				a.send("网络下载", fmt.Sprintf("下载速率 %s 超过阈值 %s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), cfg)
 			})
 		}
 	}
 
 	if m.DiskIO != nil {
-		if a.cfg.Alert.DiskRead {
-			conditionMet := m.DiskIO.ReadBytes >= a.cfg.Alert.DiskReadThreshold
+		if cfg.Alert.DiskRead {
+			conditionMet := m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold
 			a.checkCondition("disk_read", conditionMet, duration, func() {
-				a.send("磁盘读取", fmt.Sprintf("读取速率 %s 超过阈值 %s", formatBytes(m.DiskIO.ReadBytes), formatBytes(a.cfg.Alert.DiskReadThreshold)))
+				a.send("磁盘读取", fmt.Sprintf("读取速率 %s 超过阈值 %s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), cfg)
 			})
 		}
-		if a.cfg.Alert.DiskWrite {
-			conditionMet := m.DiskIO.WriteBytes >= a.cfg.Alert.DiskWriteThreshold
+		if cfg.Alert.DiskWrite {
+			conditionMet := m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold
 			a.checkCondition("disk_write", conditionMet, duration, func() {
-				a.send("磁盘写入", fmt.Sprintf("写入速率 %s 超过阈值 %s", formatBytes(m.DiskIO.WriteBytes), formatBytes(a.cfg.Alert.DiskWriteThreshold)))
+				a.send("磁盘写入", fmt.Sprintf("写入速率 %s 超过阈值 %s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), cfg)
 			})
 		}
 	}
@@ -106,14 +104,14 @@ func (a *Alerter) checkCondition(name string, conditionMet bool, duration time.D
 	}
 }
 
-func (a *Alerter) send(subject, body string) {
-	interval := time.Duration(a.cfg.Alert.Interval) * time.Second
+func (a *Alerter) send(subject, body string, cfg config.Config) {
+	interval := time.Duration(cfg.Alert.Interval) * time.Second
 	if lastSent, ok := a.lastSent[subject]; ok && time.Since(lastSent) < interval {
 		return
 	}
 	a.lastSent[subject] = time.Now()
 
-	smtpCfg := a.cfg.SMTP
+	smtpCfg := cfg.SMTP
 	addr := fmt.Sprintf("%s:%d", smtpCfg.Host, smtpCfg.Port)
 	toList := strings.Join(smtpCfg.To, ", ")
 
@@ -126,12 +124,12 @@ func (a *Alerter) send(subject, body string) {
 	beijingTime := now.In(loc).Format("2006-01-02 15:04:05 MST")
 	emailBody := fmt.Sprintf(
 		"服务器: %s\n%s\n服务器时间: %s\n北京时间: %s",
-		a.cfg.Name,
+		cfg.Name,
 		body,
 		serverTime,
 		beijingTime,
 	)
-	encodedSubject := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("[监控报警][%s] %s", a.cfg.Name, subject)))
+	encodedSubject := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("[监控报警][%s] %s", cfg.Name, subject)))
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
 		smtpCfg.User, toList, encodedSubject, emailBody)
 

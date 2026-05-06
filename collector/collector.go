@@ -18,7 +18,7 @@ type Metrics struct {
 }
 
 type Alerter interface {
-	Check(Metrics)
+	CheckWithConfig(Metrics, config.Config)
 }
 
 type Collector struct {
@@ -28,20 +28,28 @@ type Collector struct {
 	mu           sync.RWMutex
 	done         chan struct{}
 	intervalChanged atomic.Bool
+	snapshot       config.Config
+	snapshotMu     sync.RWMutex
+	reloadCh      chan struct{}
 }
 
 func NewCollector(cfg *config.Config, alerter Alerter) *Collector {
 	InitNetwork()
-	return &Collector{
-		cfg:     cfg,
-		alerter: alerter,
-		done:    make(chan struct{}),
+	c := &Collector{
+		cfg:      cfg,
+		alerter:  alerter,
+		done:     make(chan struct{}),
+		reloadCh: make(chan struct{}, 1),
 	}
+	c.snapshot = cfg.Snapshot()
+	return c
 }
 
 func (c *Collector) Start() {
 	go func() {
-		interval := time.Duration(c.cfg.Monitor.Interval) * time.Second
+		c.snapshotMu.RLock()
+		interval := time.Duration(c.snapshot.Monitor.Interval) * time.Second
+		c.snapshotMu.RUnlock()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -50,11 +58,11 @@ func (c *Collector) Start() {
 			select {
 			case <-ticker.C:
 				c.collect()
-				// Check if interval changed, reset ticker if so
-				if c.intervalChanged.Swap(false) {
-					newInterval := time.Duration(c.cfg.Monitor.Interval) * time.Second
-					ticker.Reset(newInterval)
-				}
+			case <-c.reloadCh:
+				c.snapshotMu.RLock()
+				newInterval := time.Duration(c.snapshot.Monitor.Interval) * time.Second
+				c.snapshotMu.RUnlock()
+				ticker.Reset(newInterval)
 			case <-c.done:
 				return
 			}
@@ -68,15 +76,22 @@ func (c *Collector) Stop() {
 
 // NotifyIntervalChanged signals the collector to reset its ticker
 func (c *Collector) NotifyIntervalChanged() {
-	c.intervalChanged.Store(true)
+	select {
+	case c.reloadCh <- struct{}{}:
+	default:
+	}
 }
 
 func (c *Collector) collect() {
+	c.snapshotMu.RLock()
+	enabled := c.snapshot
+	c.snapshotMu.RUnlock()
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var m Metrics
 
-	if c.cfg.Monitor.Memory {
+	if enabled.Monitor.Memory {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -88,7 +103,7 @@ func (c *Collector) collect() {
 		}()
 	}
 
-	if c.cfg.Monitor.CPU {
+	if enabled.Monitor.CPU {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -100,7 +115,7 @@ func (c *Collector) collect() {
 		}()
 	}
 
-	if c.cfg.Monitor.NetworkUp || c.cfg.Monitor.NetworkDown {
+	if enabled.Monitor.NetworkUp || enabled.Monitor.NetworkDown {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -112,7 +127,7 @@ func (c *Collector) collect() {
 		}()
 	}
 
-	if c.cfg.Monitor.DiskRoot {
+	if enabled.Monitor.DiskRoot {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -124,7 +139,7 @@ func (c *Collector) collect() {
 		}()
 	}
 
-	if c.cfg.Monitor.DiskIO {
+	if enabled.Monitor.DiskIO {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -153,14 +168,23 @@ func (c *Collector) collect() {
 	c.mu.Unlock()
 
 	if c.alerter != nil {
-		c.alerter.Check(m)
+		c.alerter.CheckWithConfig(m, enabled)
 	}
 }
 
 func (c *Collector) GetMetrics() Metrics {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	c.snapshotMu.RLock()
+	interval := c.snapshot.Monitor.Interval
+	c.snapshotMu.RUnlock()
 	m := c.metrics
-	m.Interval = c.cfg.Monitor.Interval
+	m.Interval = interval
 	return m
+}
+
+func (c *Collector) UpdateSnapshot() {
+	c.snapshotMu.Lock()
+	c.snapshot = c.cfg.Snapshot()
+	c.snapshotMu.Unlock()
 }

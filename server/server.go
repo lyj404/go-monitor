@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -229,13 +230,49 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	dailies, _ := s.db.GetDailyNetwork("1970-01-01", "2099-12-31")
+	startDate := r.URL.Query().Get("start")
+	endDate := r.URL.Query().Get("end")
+	limit := 30
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, _ := fmt.Sscanf(l, "%d", &limit); n > 0 && limit > 0 {
+			limit = 30
+		}
+	}
+	if startDate == "" {
+		startDate = "1970-01-01"
+	}
+	if endDate == "" {
+		endDate = "2099-12-31"
+	}
+	dailies, err := s.db.GetDailyNetwork(startDate, endDate, limit)
+	if err != nil {
+		json.NewEncoder(w).Encode([]store.DailyNetwork{})
+		return
+	}
 	json.NewEncoder(w).Encode(dailies)
 }
 
 func (s *Server) historyMonthlyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	monthlies, _ := s.db.GetMonthlyNetwork("1970-01", "2099-12")
+	startMonth := r.URL.Query().Get("start")
+	endMonth := r.URL.Query().Get("end")
+	limit := 12
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, _ := fmt.Sscanf(l, "%d", &limit); n > 0 && limit > 0 {
+			limit = 12
+		}
+	}
+	if startMonth == "" {
+		startMonth = "1970-01"
+	}
+	if endMonth == "" {
+		endMonth = "2099-12"
+	}
+	monthlies, err := s.db.GetMonthlyNetwork(startMonth, endMonth, limit)
+	if err != nil {
+		json.NewEncoder(w).Encode([]store.MonthlyNetwork{})
+		return
+	}
 	json.NewEncoder(w).Encode(monthlies)
 }
 
@@ -278,6 +315,8 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "保存配置失败: " + err.Error()})
 		return
 	}
+
+	s.col.UpdateSnapshot()
 
 	if intervalChanged {
 		s.col.NotifyIntervalChanged()

@@ -50,24 +50,44 @@ type SMTPConfig struct {
 }
 
 type AlertConfig struct {
-	Enabled          bool    `yaml:"enabled"`
-	Duration         int     `yaml:"duration"`
-	Memory           bool    `yaml:"memory"`
-	MemoryThreshold  float64 `yaml:"memory_threshold"`
-	CPU              bool    `yaml:"cpu"`
-	CPUThreshold     float64 `yaml:"cpu_threshold"`
-	Disk             bool    `yaml:"disk"`
-	DiskThreshold    float64 `yaml:"disk_threshold"`
-	NetworkUp        bool    `yaml:"network_up"`
-	NetworkUpThreshold int64  `yaml:"network_up_threshold"`
-	NetworkDown      bool    `yaml:"network_down"`
-	NetworkDownThreshold int64 `yaml:"network_down_threshold"`
-	DiskRead         bool    `yaml:"disk_read"`
-	DiskReadThreshold int64  `yaml:"disk_read_threshold"`
-	DiskWrite        bool    `yaml:"disk_write"`
-	DiskWriteThreshold int64 `yaml:"disk_write_threshold"`
-	Interval         int     `yaml:"interval"`
-	RetentionDays    int     `yaml:"retention_days"`
+	Enabled              bool    `yaml:"enabled"`
+	Duration             int     `yaml:"duration"`
+	Memory               bool    `yaml:"memory"`
+	MemoryThreshold      float64 `yaml:"memory_threshold"`
+	CPU                  bool    `yaml:"cpu"`
+	CPUThreshold         float64 `yaml:"cpu_threshold"`
+	Disk                 bool    `yaml:"disk"`
+	DiskThreshold        float64 `yaml:"disk_threshold"`
+	NetworkUp            bool    `yaml:"network_up"`
+	NetworkUpThreshold   int64   `yaml:"network_up_threshold"`
+	NetworkDown          bool    `yaml:"network_down"`
+	NetworkDownThreshold int64   `yaml:"network_down_threshold"`
+	DiskRead             bool    `yaml:"disk_read"`
+	DiskReadThreshold    int64   `yaml:"disk_read_threshold"`
+	DiskWrite            bool    `yaml:"disk_write"`
+	DiskWriteThreshold   int64   `yaml:"disk_write_threshold"`
+	Interval             int     `yaml:"interval"`
+	RetentionDays        int     `yaml:"retention_days"`
+}
+
+func (c *Config) Snapshot() Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return Config{
+		cfgPath: c.cfgPath,
+		Name:    c.Name,
+		Server:  c.Server,
+		Auth:    c.Auth,
+		Monitor: c.Monitor,
+		SMTP: SMTPConfig{
+			Host: c.SMTP.Host,
+			Port: c.SMTP.Port,
+			User: c.SMTP.User,
+			Pass: c.SMTP.Pass,
+			To:   append([]string{}, c.SMTP.To...),
+		},
+		Alert: c.Alert,
+	}
 }
 
 func Load(path string) (*Config, error) {
@@ -96,7 +116,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	if cfg.Alert.RetentionDays == 0 {
-		cfg.Alert.RetentionDays = 7
+		cfg.Alert.RetentionDays = 30
 	}
 
 	return &cfg, nil
