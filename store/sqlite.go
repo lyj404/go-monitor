@@ -100,7 +100,8 @@ func (s *DB) init() error {
 }
 
 func (s *DB) SaveHourlyNetwork(upload, download int64) error {
-	now := time.Now()
+	loc, _ := time.LoadLocation("UTC")
+	now := time.Now().In(loc)
 	date := now.Format("2006-01-02")
 
 	_, err := s.db.Exec(`
@@ -134,7 +135,8 @@ func (s *DB) GetDailyNetwork(startDate, endDate string) ([]DailyNetwork, error) 
 }
 
 func (s *DB) SaveMonthlyNetwork() error {
-	now := time.Now()
+	loc, _ := time.LoadLocation("UTC")
+	now := time.Now().In(loc)
 	yearMonth := now.Format("2006-01")
 	startDate := yearMonth + "-01"
 	endDate := now.Format("2006-01-02")
