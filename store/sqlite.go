@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go-monitor/collector"
+	"go-monitor/config"
 
 	_ "modernc.org/sqlite"
 )
@@ -137,6 +138,9 @@ func (s *DB) GetDailyNetwork(startDate, endDate string, limit int) ([]DailyNetwo
 		}
 		result = append(result, d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -178,31 +182,22 @@ func (s *DB) Close() error {
 	return s.db.Close()
 }
 
-func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, retentionDays int) {
+func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, cfg *config.Config) {
 	go func() {
+		timer := time.NewTimer(time.Until(nextHour(time.Now())))
+		defer timer.Stop()
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 
+		startedTicker := false
 		for {
 			select {
+			case <-timer.C:
+				startedTicker = true
+				s.runHourlyTasks(cfg)
 			case <-ticker.C:
-				upload, download := collector.GetHourlyTotalsAndReset()
-				if upload > 0 || download > 0 {
-					if err := s.SaveHourlyNetwork(upload, download); err != nil {
-						log.Println("保存每小时网络数据失败:", err)
-					}
-				}
-
-				if err := s.SaveMonthlyNetwork(); err != nil {
-					log.Println("保存月度网络汇总失败:", err)
-				}
-
-				if retentionDays > 0 {
-					if err := s.CleanOldData(retentionDays); err != nil {
-						log.Println("清理历史数据失败:", err)
-					} else {
-						log.Printf("已清理 %d 天前的历史数据", retentionDays)
-					}
+				if startedTicker {
+					s.runHourlyTasks(cfg)
 				}
 			case <-stopCh:
 				return
@@ -232,6 +227,9 @@ func (s *DB) GetMonthlyNetwork(startMonth, endMonth string, limit int) ([]Monthl
 		}
 		result = append(result, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -243,4 +241,30 @@ func (s *DB) CleanOldData(retentionDays int) error {
 
 	_, err := s.db.Exec("DELETE FROM monthly_network WHERE year_month < strftime('%Y-%m', 'now', '-12 months')")
 	return err
+}
+
+func (s *DB) runHourlyTasks(cfg *config.Config) {
+	upload, download := collector.GetHourlyTotalsAndReset()
+	if upload > 0 || download > 0 {
+		if err := s.SaveHourlyNetwork(upload, download); err != nil {
+			log.Println("保存每小时网络数据失败:", err)
+		}
+	}
+
+	if err := s.SaveMonthlyNetwork(); err != nil {
+		log.Println("保存月度网络汇总失败:", err)
+	}
+
+	retentionDays := cfg.Snapshot().Alert.RetentionDays
+	if retentionDays > 0 {
+		if err := s.CleanOldData(retentionDays); err != nil {
+			log.Println("清理历史数据失败:", err)
+		} else {
+			log.Printf("已清理 %d 天前的历史数据", retentionDays)
+		}
+	}
+}
+
+func nextHour(now time.Time) time.Time {
+	return now.Truncate(time.Hour).Add(time.Hour)
 }

@@ -14,10 +14,10 @@ type DiskIO struct {
 }
 
 var (
-	lastDiskStats      map[string]DiskIO
-	diskIOMu           sync.Mutex
-	physicalDiskCache  map[string]bool
-	physicalDiskOnce   sync.Once
+	lastDiskStats     map[string]DiskIO
+	diskIOMu          sync.Mutex
+	physicalDiskCache map[string]bool
+	physicalDiskOnce  sync.Once
 )
 
 func init() {
@@ -72,8 +72,12 @@ func CollectDiskIO() (*DiskIO, error) {
 
 		last, exists := lastDiskStats[name]
 		if exists {
-			currentRead += readBytes - last.ReadBytes
-			currentWrite += writeBytes - last.WriteBytes
+			if readBytes >= last.ReadBytes {
+				currentRead += readBytes - last.ReadBytes
+			}
+			if writeBytes >= last.WriteBytes {
+				currentWrite += writeBytes - last.WriteBytes
+			}
 		}
 
 		lastDiskStats[name] = DiskIO{

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,16 +18,16 @@ import (
 )
 
 type Server struct {
-	cfg            *config.Config
-	col            *collector.Collector
-	db             *store.DB
-	sessions       map[string]sessionInfo
-	sessMu         sync.RWMutex
-	loginLimits    map[string]*loginAttempt
-	limitMu        sync.Mutex
-	done           chan struct{}
-	indexHTMLBytes []byte
-	loginHTMLBytes []byte
+	cfg             *config.Config
+	col             *collector.Collector
+	db              *store.DB
+	sessions        map[string]sessionInfo
+	sessMu          sync.RWMutex
+	loginLimits     map[string]*loginAttempt
+	limitMu         sync.Mutex
+	done            chan struct{}
+	indexHTMLBytes  []byte
+	loginHTMLBytes  []byte
 	configHTMLBytes []byte
 }
 
@@ -37,6 +39,7 @@ type sessionInfo struct {
 type loginAttempt struct {
 	count       int
 	lockedUntil time.Time
+	lastSeen    time.Time
 }
 
 func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Server {
@@ -47,7 +50,7 @@ func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Serv
 		sessions:        make(map[string]sessionInfo),
 		loginLimits:     make(map[string]*loginAttempt),
 		done:            make(chan struct{}),
-				indexHTMLBytes:  indexHTMLBytes,
+		indexHTMLBytes:  indexHTMLBytes,
 		loginHTMLBytes:  loginHTMLBytes,
 		configHTMLBytes: configHTMLBytes,
 	}
@@ -66,23 +69,7 @@ func (s *Server) cleanupStale() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now()
-
-			s.sessMu.Lock()
-			for token, info := range s.sessions {
-				if now.After(info.expires) {
-					delete(s.sessions, token)
-				}
-			}
-			s.sessMu.Unlock()
-
-			s.limitMu.Lock()
-			for ip, attempt := range s.loginLimits {
-				if !attempt.lockedUntil.IsZero() && now.After(attempt.lockedUntil) && attempt.count == 0 {
-					delete(s.loginLimits, ip)
-				}
-			}
-			s.limitMu.Unlock()
+			s.cleanupStaleOnce(time.Now())
 
 		case <-s.done:
 			return
@@ -90,10 +77,63 @@ func (s *Server) cleanupStale() {
 	}
 }
 
+func (s *Server) cleanupStaleOnce(now time.Time) {
+	s.sessMu.Lock()
+	for token, info := range s.sessions {
+		if now.After(info.expires) {
+			delete(s.sessions, token)
+		}
+	}
+	s.sessMu.Unlock()
+
+	s.limitMu.Lock()
+	for ip, attempt := range s.loginLimits {
+		if !attempt.lockedUntil.IsZero() && now.After(attempt.lockedUntil) {
+			attempt.lockedUntil = time.Time{}
+		}
+		if attempt.count == 0 && attempt.lockedUntil.IsZero() && now.Sub(attempt.lastSeen) > 10*time.Minute {
+			delete(s.loginLimits, ip)
+		}
+	}
+	s.limitMu.Unlock()
+}
+
 func generateToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func parsePositiveLimit(raw string, defaultLimit int) int {
+	if raw == "" {
+		return defaultLimit
+	}
+
+	limit := 0
+	if _, err := fmt.Sscanf(raw, "%d", &limit); err != nil || limit <= 0 {
+		return defaultLimit
+	}
+
+	return limit
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		if ip := strings.TrimSpace(strings.Split(forwarded, ",")[0]); ip != "" {
+			return ip
+		}
+	}
+
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+
+	return r.RemoteAddr
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -130,10 +170,8 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := r.Header.Get("X-Real-IP")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
+	ip := clientIP(r)
+	now := time.Now()
 
 	s.limitMu.Lock()
 	attempt, exists := s.loginLimits[ip]
@@ -141,7 +179,8 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		attempt = &loginAttempt{}
 		s.loginLimits[ip] = attempt
 	}
-	if !attempt.lockedUntil.IsZero() && time.Now().Before(attempt.lockedUntil) {
+	attempt.lastSeen = now
+	if !attempt.lockedUntil.IsZero() && now.Before(attempt.lockedUntil) {
 		s.limitMu.Unlock()
 		http.Error(w, "Too many login attempts, try again later", http.StatusTooManyRequests)
 		return
@@ -154,14 +193,18 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Remember bool   `json:"remember"`
 	}
 
+	cfg := s.cfg.Snapshot()
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	if req.Username == s.cfg.Auth.Username && req.Password == s.cfg.Auth.Password {
+	if req.Username == cfg.Auth.Username && req.Password == cfg.Auth.Password {
 		s.limitMu.Lock()
 		attempt.count = 0
+		attempt.lockedUntil = time.Time{}
+		attempt.lastSeen = time.Now()
 		s.limitMu.Unlock()
 
 		token := generateToken()
@@ -193,6 +236,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	s.limitMu.Lock()
 	attempt.count++
+	attempt.lastSeen = time.Now()
 	if attempt.count >= 5 {
 		attempt.lockedUntil = time.Now().Add(5 * time.Minute)
 		attempt.count = 0
@@ -230,14 +274,13 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if s.db == nil {
+		json.NewEncoder(w).Encode([]store.DailyNetwork{})
+		return
+	}
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
-	limit := 30
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, _ := fmt.Sscanf(l, "%d", &limit); n > 0 && limit > 0 {
-			limit = 30
-		}
-	}
+	limit := parsePositiveLimit(r.URL.Query().Get("limit"), 30)
 	if startDate == "" {
 		startDate = "1970-01-01"
 	}
@@ -254,14 +297,13 @@ func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) historyMonthlyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if s.db == nil {
+		json.NewEncoder(w).Encode([]store.MonthlyNetwork{})
+		return
+	}
 	startMonth := r.URL.Query().Get("start")
 	endMonth := r.URL.Query().Get("end")
-	limit := 12
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, _ := fmt.Sscanf(l, "%d", &limit); n > 0 && limit > 0 {
-			limit = 12
-		}
-	}
+	limit := parsePositiveLimit(r.URL.Query().Get("limit"), 12)
 	if startMonth == "" {
 		startMonth = "1970-01"
 	}

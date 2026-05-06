@@ -80,8 +80,12 @@ func CollectNetwork() (*Network, error) {
 
 		lastStats, exists := lastNetworkStats[iface]
 		if exists {
-			currentDownload += rx - lastStats.Download
-			currentUpload += tx - lastStats.Upload
+			if rx >= lastStats.Download {
+				currentDownload += rx - lastStats.Download
+			}
+			if tx >= lastStats.Upload {
+				currentUpload += tx - lastStats.Upload
+			}
 		}
 
 		lastNetworkStats[iface] = Network{

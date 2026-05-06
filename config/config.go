@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -13,10 +14,10 @@ const maskPlaceholder = "****"
 type Config struct {
 	cfgPath string `yaml:"-"`
 
-	mu     sync.RWMutex `yaml:"-"`
-	Name   string        `yaml:"name"`
-	Server ServerConfig  `yaml:"server"`
-	Auth   AuthConfig    `yaml:"auth"`
+	mu      sync.RWMutex  `yaml:"-"`
+	Name    string        `yaml:"name"`
+	Server  ServerConfig  `yaml:"server"`
+	Auth    AuthConfig    `yaml:"auth"`
 	Monitor MonitorConfig `yaml:"monitor"`
 	SMTP    SMTPConfig    `yaml:"smtp"`
 	Alert   AlertConfig   `yaml:"alert"`
@@ -46,7 +47,7 @@ type SMTPConfig struct {
 	Port int      `yaml:"port"`
 	User string   `yaml:"user"`
 	Pass string   `yaml:"pass"`
-	To  []string `yaml:"to"`
+	To   []string `yaml:"to"`
 }
 
 type AlertConfig struct {
@@ -70,24 +71,19 @@ type AlertConfig struct {
 	RetentionDays        int     `yaml:"retention_days"`
 }
 
+type fileConfig struct {
+	Name    string        `yaml:"name"`
+	Server  ServerConfig  `yaml:"server"`
+	Auth    AuthConfig    `yaml:"auth"`
+	Monitor MonitorConfig `yaml:"monitor"`
+	SMTP    SMTPConfig    `yaml:"smtp"`
+	Alert   AlertConfig   `yaml:"alert"`
+}
+
 func (c *Config) Snapshot() Config {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return Config{
-		cfgPath: c.cfgPath,
-		Name:    c.Name,
-		Server:  c.Server,
-		Auth:    c.Auth,
-		Monitor: c.Monitor,
-		SMTP: SMTPConfig{
-			Host: c.SMTP.Host,
-			Port: c.SMTP.Port,
-			User: c.SMTP.User,
-			Pass: c.SMTP.Pass,
-			To:   append([]string{}, c.SMTP.To...),
-		},
-		Alert: c.Alert,
-	}
+	return c.cloneLocked()
 }
 
 func Load(path string) (*Config, error) {
@@ -167,7 +163,7 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"disk_write_threshold":   c.Alert.DiskWriteThreshold,
 			"interval":               c.Alert.Interval,
 			"duration":               c.Alert.Duration,
-			"retention_days":        c.Alert.RetentionDays,
+			"retention_days":         c.Alert.RetentionDays,
 		},
 	}
 }
@@ -179,13 +175,62 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 	defer c.mu.Unlock()
 
 	oldInterval := c.Monitor.Interval
+	updatedCfg := c.cloneLocked()
+	applyUpdates(&updatedCfg, updated)
 
-	// Name
+	// Save to file
+	log.Println("保存配置到文件:", c.cfgPath)
+	if err := saveConfig(c.cfgPath, updatedCfg); err != nil {
+		log.Println("保存文件失败:", err)
+		return false, err
+	}
+
+	c.applyLocked(updatedCfg)
+	log.Println("配置保存成功")
+
+	intervalChanged := c.Monitor.Interval != oldInterval
+	return intervalChanged, nil
+}
+
+func (c *Config) cloneLocked() Config {
+	return Config{
+		cfgPath: c.cfgPath,
+		Name:    c.Name,
+		Server:  c.Server,
+		Auth:    c.Auth,
+		Monitor: c.Monitor,
+		SMTP: SMTPConfig{
+			Host: c.SMTP.Host,
+			Port: c.SMTP.Port,
+			User: c.SMTP.User,
+			Pass: c.SMTP.Pass,
+			To:   append([]string{}, c.SMTP.To...),
+		},
+		Alert: c.Alert,
+	}
+}
+
+func (c *Config) applyLocked(updated Config) {
+	c.cfgPath = updated.cfgPath
+	c.Name = updated.Name
+	c.Server = updated.Server
+	c.Auth = updated.Auth
+	c.Monitor = updated.Monitor
+	c.SMTP = SMTPConfig{
+		Host: updated.SMTP.Host,
+		Port: updated.SMTP.Port,
+		User: updated.SMTP.User,
+		Pass: updated.SMTP.Pass,
+		To:   append([]string{}, updated.SMTP.To...),
+	}
+	c.Alert = updated.Alert
+}
+
+func applyUpdates(c *Config, updated map[string]interface{}) {
 	if name, ok := updated["name"].(string); ok {
 		c.Name = name
 	}
 
-	// Auth
 	if auth, ok := updated["auth"].(map[string]interface{}); ok {
 		if v, ok := auth["username"].(string); ok {
 			c.Auth.Username = v
@@ -195,7 +240,6 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 		}
 	}
 
-	// Monitor
 	if mon, ok := updated["monitor"].(map[string]interface{}); ok {
 		if v, ok := mon["interval"].(float64); ok && v > 0 {
 			c.Monitor.Interval = int(v)
@@ -220,7 +264,6 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 		}
 	}
 
-	// SMTP
 	if smtp, ok := updated["smtp"].(map[string]interface{}); ok {
 		if v, ok := smtp["host"].(string); ok {
 			c.SMTP.Host = v
@@ -247,7 +290,6 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 		}
 	}
 
-	// Alert
 	if alert, ok := updated["alert"].(map[string]interface{}); ok {
 		if v, ok := alert["enabled"].(bool); ok {
 			c.Alert.Enabled = v
@@ -294,7 +336,7 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 		if v, ok := alert["disk_write_threshold"].(float64); ok {
 			c.Alert.DiskWriteThreshold = int64(v)
 		}
-if v, ok := alert["interval"].(float64); ok && v > 0 {
+		if v, ok := alert["interval"].(float64); ok && v > 0 {
 			c.Alert.Interval = int(v)
 		}
 		if v, ok := alert["duration"].(float64); ok && v >= 0 {
@@ -304,23 +346,36 @@ if v, ok := alert["interval"].(float64); ok && v > 0 {
 			c.Alert.RetentionDays = int(v)
 		}
 	}
-
-	// Save to file
-	log.Println("保存配置到文件:", c.cfgPath)
-	if err := c.save(); err != nil {
-		log.Println("保存文件失败:", err)
-		return false, err
-	}
-	log.Println("配置保存成功")
-
-	intervalChanged := c.Monitor.Interval != oldInterval
-	return intervalChanged, nil
 }
 
-func (c *Config) save() error {
-	data, err := yaml.Marshal(c)
+func saveConfig(path string, cfg Config) error {
+	data, err := yaml.Marshal(fileConfig{
+		Name:    cfg.Name,
+		Server:  cfg.Server,
+		Auth:    cfg.Auth,
+		Monitor: cfg.Monitor,
+		SMTP:    cfg.SMTP,
+		Alert:   cfg.Alert,
+	})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.cfgPath, data, 0644)
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, path)
 }
