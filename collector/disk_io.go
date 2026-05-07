@@ -6,37 +6,54 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
+// DiskIO reports aggregated read/write rates in bytes/sec.
 type DiskIO struct {
 	ReadBytes  int64 `json:"read"`
 	WriteBytes int64 `json:"write"`
 }
 
+type diskCounter struct {
+	read  int64
+	write int64
+}
+
 var (
-	lastDiskStats     map[string]DiskIO
+	lastDiskStats     map[string]diskCounter
+	lastDiskSampled   time.Time
 	diskIOMu          sync.Mutex
 	physicalDiskCache map[string]bool
-	physicalDiskOnce  sync.Once
+	physicalDiskRef   time.Time
+	physicalDiskMu    sync.Mutex
+	physicalDiskRefD  = 5 * time.Minute
 )
 
 func init() {
-	lastDiskStats = make(map[string]DiskIO)
+	lastDiskStats = make(map[string]diskCounter)
 	physicalDiskCache = make(map[string]bool)
 }
 
-func scanPhysicalDisks() {
+func scanPhysicalDisks() map[string]bool {
+	out := make(map[string]bool)
 	entries, err := os.ReadDir("/sys/block")
 	if err != nil {
-		return
+		return out
 	}
 	for _, entry := range entries {
-		physicalDiskCache[entry.Name()] = true
+		out[entry.Name()] = true
 	}
+	return out
 }
 
 func isPhysicalDisk(name string) bool {
-	physicalDiskOnce.Do(scanPhysicalDisks)
+	physicalDiskMu.Lock()
+	defer physicalDiskMu.Unlock()
+	if physicalDiskCache == nil || time.Since(physicalDiskRef) > physicalDiskRefD {
+		physicalDiskCache = scanPhysicalDisks()
+		physicalDiskRef = time.Now()
+	}
 	return physicalDiskCache[name]
 }
 
@@ -47,10 +64,12 @@ func CollectDiskIO() (*DiskIO, error) {
 	}
 	defer f.Close()
 
-	var currentRead, currentWrite int64
+	var deltaRead, deltaWrite int64
 
 	diskIOMu.Lock()
 	defer diskIOMu.Unlock()
+
+	now := time.Now()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -72,22 +91,32 @@ func CollectDiskIO() (*DiskIO, error) {
 
 		last, exists := lastDiskStats[name]
 		if exists {
-			if readBytes >= last.ReadBytes {
-				currentRead += readBytes - last.ReadBytes
+			if readBytes >= last.read {
+				deltaRead += readBytes - last.read
 			}
-			if writeBytes >= last.WriteBytes {
-				currentWrite += writeBytes - last.WriteBytes
+			if writeBytes >= last.write {
+				deltaWrite += writeBytes - last.write
 			}
 		}
 
-		lastDiskStats[name] = DiskIO{
-			ReadBytes:  readBytes,
-			WriteBytes: writeBytes,
+		lastDiskStats[name] = diskCounter{
+			read:  readBytes,
+			write: writeBytes,
 		}
 	}
 
+	var rateR, rateW int64
+	if !lastDiskSampled.IsZero() {
+		elapsed := now.Sub(lastDiskSampled).Seconds()
+		if elapsed > 0 {
+			rateR = int64(float64(deltaRead) / elapsed)
+			rateW = int64(float64(deltaWrite) / elapsed)
+		}
+	}
+	lastDiskSampled = now
+
 	return &DiskIO{
-		ReadBytes:  currentRead,
-		WriteBytes: currentWrite,
+		ReadBytes:  rateR,
+		WriteBytes: rateW,
 	}, nil
 }

@@ -1,6 +1,15 @@
 name: Server
 server:
   port: 9527
+  # data_dir: 数据目录。留空则使用可执行文件所在目录的 ./data。
+  # 也可写绝对路径，例如 /var/lib/go-monitor。
+  data_dir: ""
+  # trust_proxy: 是否信任 X-Forwarded-For / X-Real-IP 头。
+  # 仅当本服务部署在可信反向代理之后再开启，否则会被伪造头绕过登录限速。
+  trust_proxy: false
+  # timezone: 用于聚合 daily/monthly 网络数据的时区，默认 UTC。
+  # 例如 "Asia/Shanghai"。
+  timezone: ""
 auth:
   username: admin
   password: your_password_here
@@ -28,6 +37,7 @@ alert:
   cpu_threshold: 90
   disk: true
   disk_threshold: 90
+  # 注意: network_*_threshold / disk_*_threshold 的单位为 bytes/sec。
   network_up: false
   network_up_threshold: 104857600
   network_down: false
@@ -38,3 +48,5 @@ alert:
   disk_write_threshold: 104857600
   interval: 600
   retention_days: 30
+  monthly_retention_months: 12
+

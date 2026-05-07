@@ -13,8 +13,6 @@ case "$1" in
         # Enable and start service if requested
         if [ -d /run/systemd/system ]; then
             systemctl daemon-reload
-            systemctl enable go-monitor.service
-            systemctl start go-monitor.service
         fi
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)

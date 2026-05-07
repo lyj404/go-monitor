@@ -98,10 +98,12 @@ func (s *Server) cleanupStaleOnce(now time.Time) {
 	s.limitMu.Unlock()
 }
 
-func generateToken() string {
+func generateToken() (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func parsePositiveLimit(raw string, defaultLimit int) int {
@@ -117,15 +119,17 @@ func parsePositiveLimit(raw string, defaultLimit int) int {
 	return limit
 }
 
-func clientIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		if ip := strings.TrimSpace(strings.Split(forwarded, ",")[0]); ip != "" {
+func clientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			if ip := strings.TrimSpace(strings.Split(forwarded, ",")[0]); ip != "" {
+				return ip
+			}
+		}
+
+		if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
 			return ip
 		}
-	}
-
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
 	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -166,11 +170,12 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "private, max-age=300")
 		w.Write(s.loginHTMLBytes)
 		return
 	}
 
-	ip := clientIP(r)
+	ip := clientIP(r, s.cfg.Snapshot().Server.TrustProxy)
 	now := time.Now()
 
 	s.limitMu.Lock()
@@ -207,7 +212,12 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		attempt.lastSeen = time.Now()
 		s.limitMu.Unlock()
 
-		token := generateToken()
+		token, err := generateToken()
+		if err != nil {
+			log.Println("生成会话 token 失败:", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 		duration := 24 * time.Hour
 		if req.Remember {
 			duration = 30 * 24 * time.Hour // 记住我则保持 30 天
@@ -269,6 +279,11 @@ func (s *Server) logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if data := s.col.GetMetricsJSON(); len(data) > 0 {
+		w.Write(data)
+		return
+	}
 	json.NewEncoder(w).Encode(s.col.GetMetrics())
 }
 
@@ -325,11 +340,13 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Write(s.indexHTMLBytes)
 }
 
 func (s *Server) configPageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Write(s.configHTMLBytes)
 }
 
@@ -354,6 +371,7 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("配置更新失败:", err)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "保存配置失败: " + err.Error()})
 		return
 	}

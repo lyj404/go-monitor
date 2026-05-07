@@ -1,9 +1,12 @@
 package alerter
 
 import (
+	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/smtp"
 	"strings"
 	"sync"
@@ -13,10 +16,17 @@ import (
 	"go-monitor/config"
 )
 
+const (
+	smtpDialTimeout    = 10 * time.Second
+	smtpOverallTimeout = 30 * time.Second
+)
+
 type Alerter struct {
-	conditionStartTimes map[string]time.Time
-	lastSent            map[string]time.Time
 	mu                  sync.Mutex
+	conditionStartTimes map[string]time.Time
+
+	sendMu   sync.Mutex
+	lastSent map[string]time.Time
 }
 
 func New() *Alerter {
@@ -33,83 +43,87 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Config) {
 	duration := time.Duration(cfg.Alert.Duration) * time.Second
 
 	if cfg.Alert.CPU && m.CPU != nil {
-		conditionMet := m.CPU.Usage >= cfg.Alert.CPUThreshold
-		a.checkCondition("cpu", conditionMet, duration, func() {
+		if a.shouldFire("cpu", m.CPU.Usage >= cfg.Alert.CPUThreshold, duration) {
 			a.send("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), cfg)
-		})
+		}
 	}
 
 	if cfg.Alert.Memory && m.Memory != nil {
-		conditionMet := m.Memory.Usage >= cfg.Alert.MemoryThreshold
-		a.checkCondition("memory", conditionMet, duration, func() {
+		if a.shouldFire("memory", m.Memory.Usage >= cfg.Alert.MemoryThreshold, duration) {
 			a.send("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), cfg)
-		})
+		}
 	}
 
 	if cfg.Alert.Disk && m.Disk != nil {
-		conditionMet := m.Disk.Usage >= cfg.Alert.DiskThreshold
-		a.checkCondition("disk", conditionMet, duration, func() {
+		if a.shouldFire("disk", m.Disk.Usage >= cfg.Alert.DiskThreshold, duration) {
 			a.send("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), cfg)
-		})
+		}
 	}
 
 	if m.Network != nil {
 		if cfg.Alert.NetworkUp {
-			conditionMet := m.Network.Upload >= cfg.Alert.NetworkUpThreshold
-			a.checkCondition("upload", conditionMet, duration, func() {
-				a.send("网络上传", fmt.Sprintf("上传速率 %s 超过阈值 %s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), cfg)
-			})
+			if a.shouldFire("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold, duration) {
+				a.send("网络上传", fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), cfg)
+			}
 		}
 		if cfg.Alert.NetworkDown {
-			conditionMet := m.Network.Download >= cfg.Alert.NetworkDownThreshold
-			a.checkCondition("download", conditionMet, duration, func() {
-				a.send("网络下载", fmt.Sprintf("下载速率 %s 超过阈值 %s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), cfg)
-			})
+			if a.shouldFire("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold, duration) {
+				a.send("网络下载", fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), cfg)
+			}
 		}
 	}
 
 	if m.DiskIO != nil {
 		if cfg.Alert.DiskRead {
-			conditionMet := m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold
-			a.checkCondition("disk_read", conditionMet, duration, func() {
-				a.send("磁盘读取", fmt.Sprintf("读取速率 %s 超过阈值 %s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), cfg)
-			})
+			if a.shouldFire("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold, duration) {
+				a.send("磁盘读取", fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), cfg)
+			}
 		}
 		if cfg.Alert.DiskWrite {
-			conditionMet := m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold
-			a.checkCondition("disk_write", conditionMet, duration, func() {
-				a.send("磁盘写入", fmt.Sprintf("写入速率 %s 超过阈值 %s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), cfg)
-			})
+			if a.shouldFire("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold, duration) {
+				a.send("磁盘写入", fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), cfg)
+			}
 		}
 	}
 }
 
-func (a *Alerter) checkCondition(name string, conditionMet bool, duration time.Duration, alertFunc func()) {
+// shouldFire returns true when the condition has been continuously met for
+// the configured duration. The state is reset on success so that re-firing
+// requires another full duration window — limiting noise. The actual
+// "minimum interval between emails" is enforced separately in send().
+func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Duration) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	startTime, exists := a.conditionStartTimes[name]
 
-	if conditionMet {
-		if !exists {
-			a.conditionStartTimes[name] = time.Now()
-			return
-		}
-		if time.Since(startTime) >= duration {
-			alertFunc()
-			delete(a.conditionStartTimes, name)
-		}
-	} else {
+	if !conditionMet {
 		delete(a.conditionStartTimes, name)
+		return false
 	}
+
+	if !exists {
+		a.conditionStartTimes[name] = time.Now()
+		return false
+	}
+
+	if time.Since(startTime) >= duration {
+		delete(a.conditionStartTimes, name)
+		return true
+	}
+	return false
 }
 
 func (a *Alerter) send(subject, body string, cfg config.Config) {
 	interval := time.Duration(cfg.Alert.Interval) * time.Second
+
+	a.sendMu.Lock()
 	if lastSent, ok := a.lastSent[subject]; ok && time.Since(lastSent) < interval {
+		a.sendMu.Unlock()
 		return
 	}
 	a.lastSent[subject] = time.Now()
+	a.sendMu.Unlock()
 
 	smtpCfg := cfg.SMTP
 	addr := fmt.Sprintf("%s:%d", smtpCfg.Host, smtpCfg.Port)
@@ -117,7 +131,7 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
-		loc = time.FixedZone("CST", 8*3600) // 兜底，防止时区加载失败
+		loc = time.FixedZone("CST", 8*3600)
 	}
 	now := time.Now()
 	serverTime := now.Format("2006-01-02 15:04:05 MST")
@@ -134,14 +148,72 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 		smtpCfg.User, toList, encodedSubject, emailBody)
 
 	go func() {
-		auth := smtp.PlainAuth("", smtpCfg.User, smtpCfg.Pass, smtpCfg.Host)
-		err := smtp.SendMail(addr, auth, smtpCfg.User, smtpCfg.To, []byte(msg))
-		if err != nil {
+		if err := sendMailWithTimeout(addr, smtpCfg, []byte(msg)); err != nil {
 			log.Printf("报警邮件发送失败 [%s]: %v", subject, err)
 		} else {
 			log.Printf("报警邮件已发送 [%s]: %s", subject, body)
 		}
 	}()
+}
+
+// sendMailWithTimeout dials the SMTP server with a connect timeout and a
+// hard overall deadline so a hung server cannot leak goroutines or pile up
+// further alerts.
+func sendMailWithTimeout(addr string, smtpCfg config.SMTPConfig, msg []byte) error {
+	if len(smtpCfg.To) == 0 {
+		return errors.New("收件人列表为空")
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, smtpDialTimeout)
+	if err != nil {
+		return fmt.Errorf("拨号 SMTP 失败: %w", err)
+	}
+	if err := conn.SetDeadline(time.Now().Add(smtpOverallTimeout)); err != nil {
+		conn.Close()
+		return err
+	}
+
+	c, err := smtp.NewClient(conn, smtpCfg.Host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("SMTP 客户端: %w", err)
+	}
+	defer c.Close()
+
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{ServerName: smtpCfg.Host}); err != nil {
+			return fmt.Errorf("STARTTLS: %w", err)
+		}
+	}
+
+	if smtpCfg.User != "" {
+		auth := smtp.PlainAuth("", smtpCfg.User, smtpCfg.Pass, smtpCfg.Host)
+		if err := c.Auth(auth); err != nil {
+			return fmt.Errorf("SMTP 认证: %w", err)
+		}
+	}
+
+	if err := c.Mail(smtpCfg.User); err != nil {
+		return fmt.Errorf("MAIL FROM: %w", err)
+	}
+	for _, to := range smtpCfg.To {
+		if err := c.Rcpt(to); err != nil {
+			return fmt.Errorf("RCPT TO %s: %w", to, err)
+		}
+	}
+
+	w, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	return c.Quit()
 }
 
 func formatBytes(b int64) string {

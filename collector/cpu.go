@@ -13,8 +13,9 @@ type CPU struct {
 }
 
 var (
-	lastCPUStats []uint64
-	cpuMu        sync.Mutex
+	lastCPUStats   []uint64
+	curCPUStats    []uint64
+	cpuMu          sync.Mutex
 	cpuInitialized bool
 )
 
@@ -50,38 +51,46 @@ func CollectCPU() (*CPU, error) {
 	cpuMu.Lock()
 	defer cpuMu.Unlock()
 
-	// Reuse lastCPUStats slice if same length
 	if cap(lastCPUStats) >= n {
 		lastCPUStats = lastCPUStats[:n]
 	} else {
 		lastCPUStats = make([]uint64, n)
 	}
+	if cap(curCPUStats) >= n {
+		curCPUStats = curCPUStats[:n]
+	} else {
+		curCPUStats = make([]uint64, n)
+	}
 
 	cpu := &CPU{Usage: 0}
 
-	// Parse current values into a local slice
-	cur := make([]uint64, n)
 	for i := 0; i < n; i++ {
-		cur[i], _ = strconv.ParseUint(parts[i+1], 10, 64)
+		curCPUStats[i], _ = strconv.ParseUint(parts[i+1], 10, 64)
 	}
 
-	if cpuInitialized && len(lastCPUStats) == n {
+	if cpuInitialized {
 		var totalDiff, idleDiff uint64
+		monotonic := true
 		for i := 0; i < n; i++ {
-			diff := cur[i] - lastCPUStats[i]
+			if curCPUStats[i] < lastCPUStats[i] {
+				// Counter went backward (hot-plug, container restart, wraparound).
+				// Discard this round and reseed from the new baseline.
+				monotonic = false
+				break
+			}
+			diff := curCPUStats[i] - lastCPUStats[i]
 			totalDiff += diff
 			if i == 3 {
 				idleDiff = diff
 			}
 		}
 
-		if totalDiff > 0 {
+		if monotonic && totalDiff > 0 {
 			cpu.Usage = float64(totalDiff-idleDiff) / float64(totalDiff) * 100
 		}
 	}
 
-	// Store current values for next round
-	copy(lastCPUStats, cur)
+	copy(lastCPUStats, curCPUStats)
 	cpuInitialized = true
 
 	return cpu, nil

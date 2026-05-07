@@ -1,9 +1,9 @@
 package collector
 
 import (
+	"encoding/json"
 	"go-monitor/config"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -22,15 +22,18 @@ type Alerter interface {
 }
 
 type Collector struct {
-	cfg          *config.Config
-	alerter      Alerter
-	metrics      Metrics
-	mu           sync.RWMutex
-	done         chan struct{}
-	intervalChanged atomic.Bool
-	snapshot       config.Config
-	snapshotMu     sync.RWMutex
-	reloadCh      chan struct{}
+	cfg     *config.Config
+	alerter Alerter
+
+	mu          sync.RWMutex
+	metrics     Metrics
+	metricsJSON []byte
+
+	snapshotMu sync.RWMutex
+	snapshot   config.Config
+
+	done     chan struct{}
+	reloadCh chan struct{}
 }
 
 func NewCollector(cfg *config.Config, alerter Alerter) *Collector {
@@ -74,7 +77,7 @@ func (c *Collector) Stop() {
 	close(c.done)
 }
 
-// NotifyIntervalChanged signals the collector to reset its ticker
+// NotifyIntervalChanged signals the collector to reset its ticker.
 func (c *Collector) NotifyIntervalChanged() {
 	select {
 	case c.reloadCh <- struct{}{}:
@@ -90,6 +93,7 @@ func (c *Collector) collect() {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var m Metrics
+	m.Interval = enabled.Monitor.Interval
 
 	if enabled.Monitor.Memory {
 		wg.Add(1)
@@ -163,8 +167,13 @@ func (c *Collector) collect() {
 
 	wg.Wait()
 
+	// Pre-marshal so /api/metrics can just write bytes — no per-request
+	// allocation, no extra lock acquisition on the hot read path.
+	data, _ := json.Marshal(m)
+
 	c.mu.Lock()
 	c.metrics = m
+	c.metricsJSON = data
 	c.mu.Unlock()
 
 	if c.alerter != nil {
@@ -175,12 +184,15 @@ func (c *Collector) collect() {
 func (c *Collector) GetMetrics() Metrics {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	c.snapshotMu.RLock()
-	interval := c.snapshot.Monitor.Interval
-	c.snapshotMu.RUnlock()
-	m := c.metrics
-	m.Interval = interval
-	return m
+	return c.metrics
+}
+
+// GetMetricsJSON returns the pre-marshaled JSON snapshot. The returned slice
+// must not be mutated by the caller.
+func (c *Collector) GetMetricsJSON() []byte {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.metricsJSON
 }
 
 func (c *Collector) UpdateSnapshot() {

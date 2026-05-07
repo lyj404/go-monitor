@@ -14,7 +14,9 @@ const maskPlaceholder = "****"
 type Config struct {
 	cfgPath string `yaml:"-"`
 
-	mu      sync.RWMutex  `yaml:"-"`
+	mu     sync.RWMutex `yaml:"-"`
+	saveMu sync.Mutex   `yaml:"-"`
+
 	Name    string        `yaml:"name"`
 	Server  ServerConfig  `yaml:"server"`
 	Auth    AuthConfig    `yaml:"auth"`
@@ -24,7 +26,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port       int    `yaml:"port"`
+	DataDir    string `yaml:"data_dir"`
+	TrustProxy bool   `yaml:"trust_proxy"`
+	Timezone   string `yaml:"timezone"`
 }
 
 type AuthConfig struct {
@@ -67,8 +72,9 @@ type AlertConfig struct {
 	DiskReadThreshold    int64   `yaml:"disk_read_threshold"`
 	DiskWrite            bool    `yaml:"disk_write"`
 	DiskWriteThreshold   int64   `yaml:"disk_write_threshold"`
-	Interval             int     `yaml:"interval"`
-	RetentionDays        int     `yaml:"retention_days"`
+	Interval               int     `yaml:"interval"`
+	RetentionDays          int     `yaml:"retention_days"`
+	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
 }
 
 type fileConfig struct {
@@ -115,6 +121,10 @@ func Load(path string) (*Config, error) {
 		cfg.Alert.RetentionDays = 30
 	}
 
+	if cfg.Alert.MonthlyRetentionMonths == 0 {
+		cfg.Alert.MonthlyRetentionMonths = 12
+	}
+
 	return &cfg, nil
 }
 
@@ -125,6 +135,12 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 
 	return map[string]interface{}{
 		"name": c.Name,
+		"server": map[string]interface{}{
+			"port":        c.Server.Port,
+			"data_dir":    c.Server.DataDir,
+			"trust_proxy": c.Server.TrustProxy,
+			"timezone":    c.Server.Timezone,
+		},
 		"auth": map[string]interface{}{
 			"username": c.Auth.Username,
 			"password": maskPlaceholder,
@@ -161,34 +177,42 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"disk_read_threshold":    c.Alert.DiskReadThreshold,
 			"disk_write":             c.Alert.DiskWrite,
 			"disk_write_threshold":   c.Alert.DiskWriteThreshold,
-			"interval":               c.Alert.Interval,
-			"duration":               c.Alert.Duration,
-			"retention_days":         c.Alert.RetentionDays,
+			"interval":                 c.Alert.Interval,
+			"duration":                 c.Alert.Duration,
+			"retention_days":           c.Alert.RetentionDays,
+			"monthly_retention_months": c.Alert.MonthlyRetentionMonths,
 		},
 	}
 }
 
 // Reload merges updated config, preserving sensitive fields when masked.
-// Returns true if Monitor.Interval changed.
+// Returns true if Monitor.Interval changed. The on-disk write happens
+// outside the in-memory lock so concurrent Snapshot() calls are not
+// blocked on disk I/O. saveMu serializes concurrent Reload calls so
+// the file write and in-memory swap stay coherent.
 func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
 
+	c.mu.RLock()
 	oldInterval := c.Monitor.Interval
 	updatedCfg := c.cloneLocked()
+	c.mu.RUnlock()
+
 	applyUpdates(&updatedCfg, updated)
 
-	// Save to file
-	log.Println("保存配置到文件:", c.cfgPath)
-	if err := saveConfig(c.cfgPath, updatedCfg); err != nil {
+	log.Println("保存配置到文件:", updatedCfg.cfgPath)
+	if err := saveConfig(updatedCfg.cfgPath, updatedCfg); err != nil {
 		log.Println("保存文件失败:", err)
 		return false, err
 	}
 
+	c.mu.Lock()
 	c.applyLocked(updatedCfg)
-	log.Println("配置保存成功")
-
 	intervalChanged := c.Monitor.Interval != oldInterval
+	c.mu.Unlock()
+
+	log.Println("配置保存成功")
 	return intervalChanged, nil
 }
 
@@ -229,6 +253,15 @@ func (c *Config) applyLocked(updated Config) {
 func applyUpdates(c *Config, updated map[string]interface{}) {
 	if name, ok := updated["name"].(string); ok {
 		c.Name = name
+	}
+
+	if srv, ok := updated["server"].(map[string]interface{}); ok {
+		if v, ok := srv["trust_proxy"].(bool); ok {
+			c.Server.TrustProxy = v
+		}
+		if v, ok := srv["timezone"].(string); ok {
+			c.Server.Timezone = v
+		}
 	}
 
 	if auth, ok := updated["auth"].(map[string]interface{}); ok {
@@ -344,6 +377,9 @@ func applyUpdates(c *Config, updated map[string]interface{}) {
 		}
 		if v, ok := alert["retention_days"].(float64); ok && v > 0 {
 			c.Alert.RetentionDays = int(v)
+		}
+		if v, ok := alert["monthly_retention_months"].(float64); ok && v > 0 {
+			c.Alert.MonthlyRetentionMonths = int(v)
 		}
 	}
 }

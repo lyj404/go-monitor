@@ -28,16 +28,11 @@ func main() {
 		log.Fatal("加载配置失败:", err)
 	}
 
-	// Determine config directory for data path
-	var dataDir string
-	if filepath.IsAbs(*cfgPath) {
-		dataDir = filepath.Dir(*cfgPath) + "/data"
-	} else {
-		execPath, _ := os.Executable()
-		dataDir = filepath.Dir(execPath) + "/data"
+	dataDir, err := resolveDataDir(*cfgPath, cfg.Server.DataDir)
+	if err != nil {
+		log.Fatal("无法确定数据目录:", err)
 	}
-
-	_ = dataDir // suppress unused warning
+	log.Println("数据目录:", dataDir)
 
 	var al *alerter.Alerter
 	if cfg.Alert.Enabled {
@@ -67,11 +62,9 @@ func main() {
 		Handler: handler,
 	}
 
-	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start hourly tasks with shutdown context as stop signal
 	if db != nil {
 		db.StartHourlyTasks(ctx.Done(), cfg)
 	}
@@ -99,4 +92,30 @@ func main() {
 	} else {
 		log.Println("服务已关闭")
 	}
+}
+
+// resolveDataDir picks a stable data directory in this priority order:
+//  1. config's server.data_dir (if set) — absolute or resolved relative to
+//     the executable directory
+//  2. <executable_dir>/data
+//
+// We deliberately do not derive it from the config file's path, since the
+// data directory should not silently move when the user passes a different
+// --config flag.
+func resolveDataDir(cfgPath, configured string) (string, error) {
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			return configured, nil
+		}
+		execPath, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(execPath), configured), nil
+	}
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(execPath), "data"), nil
 }

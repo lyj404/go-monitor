@@ -40,14 +40,23 @@ func TestClientIP(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	if got := clientIP(req); got != "127.0.0.1" {
+	if got := clientIP(req, false); got != "127.0.0.1" {
 		t.Fatalf("unexpected remote IP: %q", got)
 	}
 
+	// Without trust_proxy, X-Forwarded-For must be ignored to prevent spoofing.
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2")
-	if got := clientIP(req); got != "10.0.0.1" {
+	if got := clientIP(req, false); got != "127.0.0.1" {
+		t.Fatalf("XFF should be ignored when trust_proxy=false, got: %q", got)
+	}
+
+	// With trust_proxy, the first XFF entry wins.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2")
+	if got := clientIP(req, true); got != "10.0.0.1" {
 		t.Fatalf("unexpected forwarded IP: %q", got)
 	}
 }

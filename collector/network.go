@@ -6,45 +6,69 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
+// Network reports per-interface aggregated rates in bytes/sec.
 type Network struct {
 	Upload   int64 `json:"upload"`
 	Download int64 `json:"download"`
 }
 
+type netCounter struct {
+	rx int64
+	tx int64
+}
+
 var (
-	lastNetworkStats map[string]Network
-	networkMu        sync.Mutex
-	totalUpload      int64
-	totalDownload    int64
-	physicalNICCache map[string]bool
-	physicalNICOnce  sync.Once
+	lastNetworkStats   map[string]netCounter
+	lastNetworkSampled time.Time
+	networkMu          sync.Mutex
+	totalUpload        int64
+	totalDownload      int64
+
+	physicalNICCache    map[string]bool
+	physicalNICRefresh  time.Time
+	physicalNICCacheMu  sync.Mutex
+	physicalNICRefreshD = 5 * time.Minute
 )
 
 func InitNetwork() {
-	lastNetworkStats = make(map[string]Network)
+	networkMu.Lock()
+	lastNetworkStats = make(map[string]netCounter)
 	totalUpload = 0
 	totalDownload = 0
+	lastNetworkSampled = time.Time{}
+	networkMu.Unlock()
+
+	physicalNICCacheMu.Lock()
 	physicalNICCache = make(map[string]bool)
+	physicalNICRefresh = time.Time{}
+	physicalNICCacheMu.Unlock()
 }
 
-func scanPhysicalNICs() {
+func scanPhysicalNICs() map[string]bool {
+	out := make(map[string]bool)
 	entries, err := os.ReadDir("/sys/class/net")
 	if err != nil {
-		return
+		return out
 	}
 	for _, entry := range entries {
 		iface := entry.Name()
-		_, err := os.Stat("/sys/class/net/" + iface + "/device")
-		if err == nil {
-			physicalNICCache[iface] = true
+		if _, err := os.Stat("/sys/class/net/" + iface + "/device"); err == nil {
+			out[iface] = true
 		}
 	}
+	return out
 }
 
 func isPhysicalNIC(iface string) bool {
-	physicalNICOnce.Do(scanPhysicalNICs)
+	physicalNICCacheMu.Lock()
+	defer physicalNICCacheMu.Unlock()
+	if physicalNICCache == nil || time.Since(physicalNICRefresh) > physicalNICRefreshD {
+		physicalNICCache = scanPhysicalNICs()
+		physicalNICRefresh = time.Now()
+	}
 	return physicalNICCache[iface]
 }
 
@@ -55,10 +79,12 @@ func CollectNetwork() (*Network, error) {
 	}
 	defer f.Close()
 
-	var currentUpload, currentDownload int64
+	var deltaUpload, deltaDownload int64
 
 	networkMu.Lock()
 	defer networkMu.Unlock()
+
+	now := time.Now()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(nil, 1024*1024)
@@ -78,28 +104,35 @@ func CollectNetwork() (*Network, error) {
 		rx, _ := strconv.ParseInt(parts[1], 10, 64)
 		tx, _ := strconv.ParseInt(parts[9], 10, 64)
 
-		lastStats, exists := lastNetworkStats[iface]
+		last, exists := lastNetworkStats[iface]
 		if exists {
-			if rx >= lastStats.Download {
-				currentDownload += rx - lastStats.Download
+			if rx >= last.rx {
+				deltaDownload += rx - last.rx
 			}
-			if tx >= lastStats.Upload {
-				currentUpload += tx - lastStats.Upload
+			if tx >= last.tx {
+				deltaUpload += tx - last.tx
 			}
 		}
 
-		lastNetworkStats[iface] = Network{
-			Upload:   tx,
-			Download: rx,
-		}
+		lastNetworkStats[iface] = netCounter{rx: rx, tx: tx}
 	}
 
-	totalUpload += currentUpload
-	totalDownload += currentDownload
+	totalUpload += deltaUpload
+	totalDownload += deltaDownload
+
+	var rateUp, rateDown int64
+	if !lastNetworkSampled.IsZero() {
+		elapsed := now.Sub(lastNetworkSampled).Seconds()
+		if elapsed > 0 {
+			rateUp = int64(float64(deltaUpload) / elapsed)
+			rateDown = int64(float64(deltaDownload) / elapsed)
+		}
+	}
+	lastNetworkSampled = now
 
 	return &Network{
-		Upload:   currentUpload,
-		Download: currentDownload,
+		Upload:   rateUp,
+		Download: rateDown,
 	}, nil
 }
 
