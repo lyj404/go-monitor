@@ -95,13 +95,15 @@ func main() {
 }
 
 // resolveDataDir picks a stable data directory in this priority order:
-//  1. config's server.data_dir (if set) — absolute or resolved relative to
-//     the executable directory
-//  2. <executable_dir>/data
+//  1. server.data_dir from config (if set) — absolute, or resolved
+//     relative to the executable directory
+//  2. legacy fallback for backward compatibility:
+//     - if --config is an absolute path → <config_dir>/data
+//       (matches the Debian package layout: /etc/go-monitor/data)
+//     - otherwise → <executable_dir>/data
 //
-// We deliberately do not derive it from the config file's path, since the
-// data directory should not silently move when the user passes a different
-// --config flag.
+// Keeping the legacy fallback means existing installs that never set
+// data_dir continue to find their old monitor.db after upgrade.
 func resolveDataDir(cfgPath, configured string) (string, error) {
 	if configured != "" {
 		if filepath.IsAbs(configured) {
@@ -112,6 +114,10 @@ func resolveDataDir(cfgPath, configured string) (string, error) {
 			return "", err
 		}
 		return filepath.Join(filepath.Dir(execPath), configured), nil
+	}
+
+	if filepath.IsAbs(cfgPath) {
+		return filepath.Join(filepath.Dir(cfgPath), "data"), nil
 	}
 	execPath, err := os.Executable()
 	if err != nil {

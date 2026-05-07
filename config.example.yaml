@@ -1,8 +1,10 @@
 name: Server
 server:
   port: 9527
-  # data_dir: 数据目录。留空则使用可执行文件所在目录的 ./data。
-  # 也可写绝对路径，例如 /var/lib/go-monitor。
+  # data_dir: 数据目录。留空时按以下顺序回退：
+  #   1) --config 是绝对路径 → 与 config 文件同级的 data/（兼容 Debian 包：/etc/go-monitor/data）
+  #   2) 否则 → 可执行文件同级的 data/
+  # 也可显式写绝对路径，例如 /var/lib/go-monitor。
   data_dir: ""
   # trust_proxy: 是否信任 X-Forwarded-For / X-Real-IP 头。
   # 仅当本服务部署在可信反向代理之后再开启，否则会被伪造头绕过登录限速。
