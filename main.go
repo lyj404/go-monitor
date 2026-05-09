@@ -79,6 +79,9 @@ func main() {
 
 	log.Println("正在关闭服务...")
 
+	if al != nil {
+		al.Close()
+	}
 	if db != nil {
 		db.Close()
 	}
@@ -99,7 +102,7 @@ func main() {
 //     relative to the executable directory
 //  2. legacy fallback for backward compatibility:
 //     - if --config is an absolute path → <config_dir>/data
-//       (matches the Debian package layout: /etc/go-monitor/data)
+//     (matches the Debian package layout: /etc/go-monitor/data)
 //     - otherwise → <executable_dir>/data
 //
 // Keeping the legacy fallback means existing installs that never set

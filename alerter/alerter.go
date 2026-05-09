@@ -19,7 +19,15 @@ import (
 const (
 	smtpDialTimeout    = 10 * time.Second
 	smtpOverallTimeout = 30 * time.Second
+	defaultQueueSize   = 32
+	defaultWorkers     = 2
 )
+
+type emailJob struct {
+	subject string
+	body    string
+	cfg     config.Config
+}
 
 type Alerter struct {
 	mu                  sync.Mutex
@@ -27,13 +35,32 @@ type Alerter struct {
 
 	sendMu   sync.Mutex
 	lastSent map[string]time.Time
+
+	jobs     chan emailJob
+	stopOnce sync.Once
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
 }
 
 func New() *Alerter {
-	return &Alerter{
+	a := &Alerter{
 		conditionStartTimes: make(map[string]time.Time),
 		lastSent:            make(map[string]time.Time),
+		jobs:                make(chan emailJob, defaultQueueSize),
+		stopCh:              make(chan struct{}),
 	}
+	for i := 0; i < defaultWorkers; i++ {
+		a.wg.Add(1)
+		go a.worker()
+	}
+	return a
+}
+
+func (a *Alerter) Close() {
+	a.stopOnce.Do(func() {
+		close(a.stopCh)
+		a.wg.Wait()
+	})
 }
 
 func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Config) {
@@ -125,6 +152,34 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 	a.lastSent[subject] = time.Now()
 	a.sendMu.Unlock()
 
+	job := emailJob{subject: subject, body: body, cfg: cfg}
+	select {
+	case a.jobs <- job:
+	default:
+		log.Printf("报警队列已满，丢弃邮件 [%s]", subject)
+	}
+}
+
+func (a *Alerter) worker() {
+	defer a.wg.Done()
+	for {
+		select {
+		case job, ok := <-a.jobs:
+			if !ok {
+				return
+			}
+			a.deliver(job)
+		case <-a.stopCh:
+			return
+		}
+	}
+}
+
+func (a *Alerter) deliver(job emailJob) {
+	subject := job.subject
+	body := job.body
+	cfg := job.cfg
+
 	smtpCfg := cfg.SMTP
 	addr := fmt.Sprintf("%s:%d", smtpCfg.Host, smtpCfg.Port)
 	toList := strings.Join(smtpCfg.To, ", ")
@@ -147,13 +202,11 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
 		smtpCfg.User, toList, encodedSubject, emailBody)
 
-	go func() {
-		if err := sendMailWithTimeout(addr, smtpCfg, []byte(msg)); err != nil {
-			log.Printf("报警邮件发送失败 [%s]: %v", subject, err)
-		} else {
-			log.Printf("报警邮件已发送 [%s]: %s", subject, body)
-		}
-	}()
+	if err := sendMailWithTimeout(addr, smtpCfg, []byte(msg)); err != nil {
+		log.Printf("报警邮件发送失败 [%s]: %v", subject, err)
+	} else {
+		log.Printf("报警邮件已发送 [%s]: %s", subject, body)
+	}
 }
 
 // sendMailWithTimeout dials the SMTP server with a connect timeout and a

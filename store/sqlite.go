@@ -179,10 +179,6 @@ func (s *DB) SaveMonthlyNetwork(loc *time.Location) error {
 		return err
 	}
 
-	if totalUpload == 0 && totalDownload == 0 {
-		return nil
-	}
-
 	_, err = s.db.Exec(`
 		INSERT INTO monthly_network (year_month, upload, download, created_at)
 		VALUES (?, ?, ?, ?)
@@ -283,10 +279,8 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 	loc := aggregationLocation(cfg)
 
 	upload, download := collector.GetHourlyTotalsAndReset()
-	if upload > 0 || download > 0 {
-		if err := s.SaveHourlyNetwork(upload, download, loc); err != nil {
-			log.Println("保存每小时网络数据失败:", err)
-		}
+	if err := s.SaveHourlyNetwork(upload, download, loc); err != nil {
+		log.Println("保存每小时网络数据失败:", err)
 	}
 
 	if err := s.SaveMonthlyNetwork(loc); err != nil {

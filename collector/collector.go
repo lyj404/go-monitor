@@ -19,6 +19,7 @@ type Metrics struct {
 
 type Alerter interface {
 	CheckWithConfig(Metrics, config.Config)
+	Close()
 }
 
 type Collector struct {

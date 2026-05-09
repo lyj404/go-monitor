@@ -61,7 +61,7 @@ func TestClientIP(t *testing.T) {
 	}
 }
 
-func TestHistoryHandlersReturnEmptyWhenDBNil(t *testing.T) {
+func TestHistoryHandlersReturnDBUnavailableWhenDBNil(t *testing.T) {
 	t.Parallel()
 
 	s := &Server{cfg: &config.Config{}}
@@ -79,16 +79,16 @@ func TestHistoryHandlersReturnEmptyWhenDBNil(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/?limit=5", nil)
 			tc.handler(rec, req)
 
-			if rec.Code != http.StatusOK {
+			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("unexpected status: %d", rec.Code)
 			}
 
-			var payload []map[string]interface{}
+			var payload map[string]string
 			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("unmarshal response: %v", err)
 			}
-			if len(payload) != 0 {
-				t.Fatalf("expected empty payload, got %v", payload)
+			if payload["status"] != "error" {
+				t.Fatalf("expected error payload, got %v", payload)
 			}
 		})
 	}
@@ -121,7 +121,15 @@ func TestCleanupStaleRemovesExpiredLimiterEntries(t *testing.T) {
 	if _, ok := s.loginLimits["1.1.1.1"]; ok {
 		t.Fatal("expected idle limiter entry to be cleaned")
 	}
-	if _, ok := s.loginLimits["2.2.2.2"]; !ok {
-		t.Fatal("expected active limiter entry to be retained")
+	if _, ok := s.loginLimits["2.2.2.2"]; ok {
+		t.Fatal("expected stale partial-attempt limiter entry to be cleaned")
 	}
+}
+
+func TestCloseIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	s := &Server{done: make(chan struct{})}
+	s.Close()
+	s.Close()
 }

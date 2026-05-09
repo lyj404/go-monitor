@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -59,7 +61,21 @@ func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Serv
 }
 
 func (s *Server) Close() {
-	close(s.done)
+	select {
+	case <-s.done:
+		return
+	default:
+		close(s.done)
+	}
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "error",
+		"message": message,
+	})
 }
 
 func (s *Server) cleanupStale() {
@@ -91,7 +107,7 @@ func (s *Server) cleanupStaleOnce(now time.Time) {
 		if !attempt.lockedUntil.IsZero() && now.After(attempt.lockedUntil) {
 			attempt.lockedUntil = time.Time{}
 		}
-		if attempt.count == 0 && attempt.lockedUntil.IsZero() && now.Sub(attempt.lastSeen) > 10*time.Minute {
+		if attempt.lockedUntil.IsZero() && now.Sub(attempt.lastSeen) > 10*time.Minute {
 			delete(s.loginLimits, ip)
 		}
 	}
@@ -290,7 +306,7 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.db == nil {
-		json.NewEncoder(w).Encode([]store.DailyNetwork{})
+		writeJSONError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 	startDate := r.URL.Query().Get("start")
@@ -304,7 +320,8 @@ func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	dailies, err := s.db.GetDailyNetwork(startDate, endDate, limit)
 	if err != nil {
-		json.NewEncoder(w).Encode([]store.DailyNetwork{})
+		log.Println("查询每日历史数据失败:", err)
+		writeJSONError(w, http.StatusInternalServerError, "query daily history failed")
 		return
 	}
 	json.NewEncoder(w).Encode(dailies)
@@ -313,7 +330,7 @@ func (s *Server) historyDailyHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) historyMonthlyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.db == nil {
-		json.NewEncoder(w).Encode([]store.MonthlyNetwork{})
+		writeJSONError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 	startMonth := r.URL.Query().Get("start")
@@ -327,7 +344,8 @@ func (s *Server) historyMonthlyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	monthlies, err := s.db.GetMonthlyNetwork(startMonth, endMonth, limit)
 	if err != nil {
-		json.NewEncoder(w).Encode([]store.MonthlyNetwork{})
+		log.Println("查询月度历史数据失败:", err)
+		writeJSONError(w, http.StatusInternalServerError, "query monthly history failed")
 		return
 	}
 	json.NewEncoder(w).Encode(monthlies)
@@ -366,13 +384,19 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
+	if len(updated) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "empty config payload")
+		return
+	}
 
 	intervalChanged, err := s.cfg.Reload(updated)
 	if err != nil {
 		log.Println("配置更新失败:", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": "保存配置失败: " + err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrPermission) {
+			status = http.StatusForbidden
+		}
+		writeJSONError(w, status, "保存配置失败: "+err.Error())
 		return
 	}
 
