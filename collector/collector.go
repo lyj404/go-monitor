@@ -35,6 +35,8 @@ type Collector struct {
 
 	done     chan struct{}
 	reloadCh chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
 func NewCollector(cfg *config.Config, alerter Alerter) *Collector {
@@ -50,7 +52,9 @@ func NewCollector(cfg *config.Config, alerter Alerter) *Collector {
 }
 
 func (c *Collector) Start() {
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		c.snapshotMu.RLock()
 		interval := time.Duration(c.snapshot.Monitor.Interval) * time.Second
 		c.snapshotMu.RUnlock()
@@ -75,7 +79,10 @@ func (c *Collector) Start() {
 }
 
 func (c *Collector) Stop() {
-	close(c.done)
+	c.stopOnce.Do(func() {
+		close(c.done)
+	})
+	c.wg.Wait()
 }
 
 // NotifyIntervalChanged signals the collector to reset its ticker.

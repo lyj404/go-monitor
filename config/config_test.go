@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func TestLoadRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  port: 70000\nmonitor:\n  interval: 3\nalert:\n  interval: 60\n"), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected invalid config to fail validation")
+	}
+}
+
 func TestReloadIsAtomicWhenSaveFails(t *testing.T) {
 	t.Parallel()
 
@@ -54,9 +67,10 @@ func TestReloadPersistsOnlyAfterSuccessfulSave(t *testing.T) {
 
 	cfg := &Config{
 		cfgPath: path,
+		Server:  ServerConfig{Port: 8080},
 		Name:    "before",
 		Monitor: MonitorConfig{Interval: 3},
-		Alert:   AlertConfig{RetentionDays: 7},
+		Alert:   AlertConfig{RetentionDays: 7, Interval: 60},
 	}
 
 	updated := map[string]interface{}{
@@ -88,5 +102,34 @@ func TestReloadPersistsOnlyAfterSuccessfulSave(t *testing.T) {
 	}
 	if string(data) == "" {
 		t.Fatal("saved config is empty")
+	}
+}
+
+func TestReloadRejectsInvalidUpdate(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  port: 8080\nmonitor:\n  interval: 3\nalert:\n  interval: 60\n"), 0644); err != nil {
+		t.Fatalf("write seed config: %v", err)
+	}
+
+	cfg := &Config{
+		cfgPath: path,
+		Server:  ServerConfig{Port: 8080},
+		Monitor: MonitorConfig{Interval: 3},
+		Alert:   AlertConfig{Interval: 60},
+	}
+
+	updated := map[string]interface{}{
+		"server": map[string]interface{}{
+			"timezone": "Invalid/Timezone",
+		},
+	}
+
+	if _, err := cfg.Reload(updated); err == nil {
+		t.Fatal("expected invalid reload to fail")
+	}
+	if cfg.Snapshot().Monitor.Interval != 3 {
+		t.Fatal("invalid reload should not mutate in-memory config")
 	}
 }

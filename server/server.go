@@ -19,6 +19,8 @@ import (
 	"go-monitor/store"
 )
 
+const maxConfigPayloadBytes = 1 << 20
+
 type Server struct {
 	cfg             *config.Config
 	col             *collector.Collector
@@ -380,6 +382,7 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updated map[string]interface{}
+	r.Body = http.MaxBytesReader(w, r.Body, maxConfigPayloadBytes)
 	if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return

@@ -2,8 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"go-monitor/collector"
@@ -33,6 +35,12 @@ type MonthlyNetwork struct {
 }
 
 func NewDB(path string) (*DB, error) {
+	cleanPath := filepath.Clean(path)
+	if !filepath.IsAbs(cleanPath) {
+		return nil, fmt.Errorf("database path must be absolute: %q", path)
+	}
+	path = cleanPath
+
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.MkdirAll(path, 0755); err != nil {
 			return nil, err

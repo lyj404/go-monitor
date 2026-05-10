@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,22 +58,22 @@ type SMTPConfig struct {
 }
 
 type AlertConfig struct {
-	Enabled              bool    `yaml:"enabled"`
-	Duration             int     `yaml:"duration"`
-	Memory               bool    `yaml:"memory"`
-	MemoryThreshold      float64 `yaml:"memory_threshold"`
-	CPU                  bool    `yaml:"cpu"`
-	CPUThreshold         float64 `yaml:"cpu_threshold"`
-	Disk                 bool    `yaml:"disk"`
-	DiskThreshold        float64 `yaml:"disk_threshold"`
-	NetworkUp            bool    `yaml:"network_up"`
-	NetworkUpThreshold   int64   `yaml:"network_up_threshold"`
-	NetworkDown          bool    `yaml:"network_down"`
-	NetworkDownThreshold int64   `yaml:"network_down_threshold"`
-	DiskRead             bool    `yaml:"disk_read"`
-	DiskReadThreshold    int64   `yaml:"disk_read_threshold"`
-	DiskWrite            bool    `yaml:"disk_write"`
-	DiskWriteThreshold   int64   `yaml:"disk_write_threshold"`
+	Enabled                bool    `yaml:"enabled"`
+	Duration               int     `yaml:"duration"`
+	Memory                 bool    `yaml:"memory"`
+	MemoryThreshold        float64 `yaml:"memory_threshold"`
+	CPU                    bool    `yaml:"cpu"`
+	CPUThreshold           float64 `yaml:"cpu_threshold"`
+	Disk                   bool    `yaml:"disk"`
+	DiskThreshold          float64 `yaml:"disk_threshold"`
+	NetworkUp              bool    `yaml:"network_up"`
+	NetworkUpThreshold     int64   `yaml:"network_up_threshold"`
+	NetworkDown            bool    `yaml:"network_down"`
+	NetworkDownThreshold   int64   `yaml:"network_down_threshold"`
+	DiskRead               bool    `yaml:"disk_read"`
+	DiskReadThreshold      int64   `yaml:"disk_read_threshold"`
+	DiskWrite              bool    `yaml:"disk_write"`
+	DiskWriteThreshold     int64   `yaml:"disk_write_threshold"`
 	Interval               int     `yaml:"interval"`
 	RetentionDays          int     `yaml:"retention_days"`
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
@@ -125,6 +127,10 @@ func Load(path string) (*Config, error) {
 		cfg.Alert.MonthlyRetentionMonths = 12
 	}
 
+	if err := validate(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
@@ -162,21 +168,21 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"to":   c.SMTP.To,
 		},
 		"alert": map[string]interface{}{
-			"enabled":                c.Alert.Enabled,
-			"memory":                 c.Alert.Memory,
-			"memory_threshold":       c.Alert.MemoryThreshold,
-			"cpu":                    c.Alert.CPU,
-			"cpu_threshold":          c.Alert.CPUThreshold,
-			"disk":                   c.Alert.Disk,
-			"disk_threshold":         c.Alert.DiskThreshold,
-			"network_up":             c.Alert.NetworkUp,
-			"network_up_threshold":   c.Alert.NetworkUpThreshold,
-			"network_down":           c.Alert.NetworkDown,
-			"network_down_threshold": c.Alert.NetworkDownThreshold,
-			"disk_read":              c.Alert.DiskRead,
-			"disk_read_threshold":    c.Alert.DiskReadThreshold,
-			"disk_write":             c.Alert.DiskWrite,
-			"disk_write_threshold":   c.Alert.DiskWriteThreshold,
+			"enabled":                  c.Alert.Enabled,
+			"memory":                   c.Alert.Memory,
+			"memory_threshold":         c.Alert.MemoryThreshold,
+			"cpu":                      c.Alert.CPU,
+			"cpu_threshold":            c.Alert.CPUThreshold,
+			"disk":                     c.Alert.Disk,
+			"disk_threshold":           c.Alert.DiskThreshold,
+			"network_up":               c.Alert.NetworkUp,
+			"network_up_threshold":     c.Alert.NetworkUpThreshold,
+			"network_down":             c.Alert.NetworkDown,
+			"network_down_threshold":   c.Alert.NetworkDownThreshold,
+			"disk_read":                c.Alert.DiskRead,
+			"disk_read_threshold":      c.Alert.DiskReadThreshold,
+			"disk_write":               c.Alert.DiskWrite,
+			"disk_write_threshold":     c.Alert.DiskWriteThreshold,
 			"interval":                 c.Alert.Interval,
 			"duration":                 c.Alert.Duration,
 			"retention_days":           c.Alert.RetentionDays,
@@ -200,6 +206,9 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 	c.mu.RUnlock()
 
 	applyUpdates(&updatedCfg, updated)
+	if err := validate(&updatedCfg); err != nil {
+		return false, err
+	}
 
 	log.Println("保存配置到文件:", updatedCfg.cfgPath)
 	if err := saveConfig(updatedCfg.cfgPath, updatedCfg); err != nil {
@@ -414,4 +423,31 @@ func saveConfig(path string, cfg Config) error {
 	}
 
 	return os.Rename(tmpPath, path)
+}
+
+func validate(c *Config) error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("invalid server.port: %d", c.Server.Port)
+	}
+	if c.Monitor.Interval <= 0 {
+		return fmt.Errorf("invalid monitor.interval: %d", c.Monitor.Interval)
+	}
+	if c.Alert.Interval <= 0 {
+		return fmt.Errorf("invalid alert.interval: %d", c.Alert.Interval)
+	}
+	if c.Alert.Duration < 0 {
+		return fmt.Errorf("invalid alert.duration: %d", c.Alert.Duration)
+	}
+	if c.Alert.RetentionDays < 0 {
+		return fmt.Errorf("invalid alert.retention_days: %d", c.Alert.RetentionDays)
+	}
+	if c.Alert.MonthlyRetentionMonths < 0 {
+		return fmt.Errorf("invalid alert.monthly_retention_months: %d", c.Alert.MonthlyRetentionMonths)
+	}
+	if c.Server.Timezone != "" {
+		if _, err := time.LoadLocation(c.Server.Timezone); err != nil {
+			return fmt.Errorf("invalid server.timezone: %q", c.Server.Timezone)
+		}
+	}
+	return nil
 }

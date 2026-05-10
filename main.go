@@ -58,8 +58,12 @@ func main() {
 	log.Println("服务器启动于 http://localhost" + addr)
 
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -79,13 +83,14 @@ func main() {
 
 	log.Println("正在关闭服务...")
 
-	if al != nil {
-		al.Close()
-	}
+	col.Stop()
 	if db != nil {
 		db.Close()
 	}
 	svr.Close()
+	if al != nil {
+		al.Close()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

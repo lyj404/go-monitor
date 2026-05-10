@@ -65,9 +65,10 @@ func scanPhysicalNICs() map[string]bool {
 func isPhysicalNIC(iface string) bool {
 	physicalNICCacheMu.Lock()
 	defer physicalNICCacheMu.Unlock()
-	if physicalNICCache == nil || time.Since(physicalNICRefresh) > physicalNICRefreshD {
+	now := time.Now()
+	if physicalNICCache == nil || now.Sub(physicalNICRefresh) > physicalNICRefreshD {
 		physicalNICCache = scanPhysicalNICs()
-		physicalNICRefresh = time.Now()
+		physicalNICRefresh = now
 	}
 	return physicalNICCache[iface]
 }

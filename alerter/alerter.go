@@ -21,6 +21,7 @@ const (
 	smtpOverallTimeout = 30 * time.Second
 	defaultQueueSize   = 32
 	defaultWorkers     = 2
+	stateTTL           = 24 * time.Hour
 )
 
 type emailJob struct {
@@ -39,6 +40,7 @@ type Alerter struct {
 	jobs     chan emailJob
 	stopOnce sync.Once
 	stopCh   chan struct{}
+	closed   bool
 	wg       sync.WaitGroup
 }
 
@@ -58,6 +60,9 @@ func New() *Alerter {
 
 func (a *Alerter) Close() {
 	a.stopOnce.Do(func() {
+		a.sendMu.Lock()
+		a.closed = true
+		a.sendMu.Unlock()
 		close(a.stopCh)
 		a.wg.Wait()
 	})
@@ -121,6 +126,7 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Config) {
 func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Duration) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.pruneConditionStateLocked(time.Now())
 
 	startTime, exists := a.conditionStartTimes[name]
 
@@ -143,13 +149,19 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 
 func (a *Alerter) send(subject, body string, cfg config.Config) {
 	interval := time.Duration(cfg.Alert.Interval) * time.Second
+	now := time.Now()
 
 	a.sendMu.Lock()
-	if lastSent, ok := a.lastSent[subject]; ok && time.Since(lastSent) < interval {
+	if a.closed {
 		a.sendMu.Unlock()
 		return
 	}
-	a.lastSent[subject] = time.Now()
+	a.pruneLastSentLocked(now)
+	if lastSent, ok := a.lastSent[subject]; ok && now.Sub(lastSent) < interval {
+		a.sendMu.Unlock()
+		return
+	}
+	a.lastSent[subject] = now
 	a.sendMu.Unlock()
 
 	job := emailJob{subject: subject, body: body, cfg: cfg}
@@ -157,6 +169,9 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 	case a.jobs <- job:
 	default:
 		log.Printf("报警队列已满，丢弃邮件 [%s]", subject)
+		a.sendMu.Lock()
+		delete(a.lastSent, subject)
+		a.sendMu.Unlock()
 	}
 }
 
@@ -206,6 +221,22 @@ func (a *Alerter) deliver(job emailJob) {
 		log.Printf("报警邮件发送失败 [%s]: %v", subject, err)
 	} else {
 		log.Printf("报警邮件已发送 [%s]: %s", subject, body)
+	}
+}
+
+func (a *Alerter) pruneConditionStateLocked(now time.Time) {
+	for name, startedAt := range a.conditionStartTimes {
+		if now.Sub(startedAt) > stateTTL {
+			delete(a.conditionStartTimes, name)
+		}
+	}
+}
+
+func (a *Alerter) pruneLastSentLocked(now time.Time) {
+	for subject, sentAt := range a.lastSent {
+		if now.Sub(sentAt) > stateTTL {
+			delete(a.lastSent, subject)
+		}
 	}
 }
 

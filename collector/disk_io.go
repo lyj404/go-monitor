@@ -50,9 +50,10 @@ func scanPhysicalDisks() map[string]bool {
 func isPhysicalDisk(name string) bool {
 	physicalDiskMu.Lock()
 	defer physicalDiskMu.Unlock()
-	if physicalDiskCache == nil || time.Since(physicalDiskRef) > physicalDiskRefD {
+	now := time.Now()
+	if physicalDiskCache == nil || now.Sub(physicalDiskRef) > physicalDiskRefD {
 		physicalDiskCache = scanPhysicalDisks()
-		physicalDiskRef = time.Now()
+		physicalDiskRef = now
 	}
 	return physicalDiskCache[name]
 }
