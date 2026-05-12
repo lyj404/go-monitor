@@ -265,6 +265,12 @@ func applyUpdates(c *Config, updated map[string]interface{}) {
 	}
 
 	if srv, ok := updated["server"].(map[string]interface{}); ok {
+		if v, ok := srv["port"].(float64); ok {
+			c.Server.Port = int(v)
+		}
+		if v, ok := srv["data_dir"].(string); ok {
+			c.Server.DataDir = v
+		}
 		if v, ok := srv["trust_proxy"].(bool); ok {
 			c.Server.TrustProxy = v
 		}
