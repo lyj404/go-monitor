@@ -299,6 +299,10 @@
                 <label class="switch"><input type="checkbox" id="monitor_network_down"><span class="slider"></span></label>
             </div>
             <div class="switch-row">
+                <label>局域网/公网流量区分</label>
+                <label class="switch"><input type="checkbox" id="monitor_lan_wan_split"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
                 <label>磁盘使用监控</label>
                 <label class="switch"><input type="checkbox" id="monitor_disk_root"><span class="slider"></span></label>
             </div>
@@ -454,6 +458,7 @@
                 document.getElementById('monitor_cpu').checked = cfg.monitor.cpu || false;
                 document.getElementById('monitor_network_up').checked = cfg.monitor.network_up || false;
                 document.getElementById('monitor_network_down').checked = cfg.monitor.network_down || false;
+                document.getElementById('monitor_lan_wan_split').checked = cfg.monitor.lan_wan_split || false;
                 document.getElementById('monitor_disk_root').checked = cfg.monitor.disk_root || false;
                 document.getElementById('monitor_disk_io').checked = cfg.monitor.disk_io || false;
 
@@ -518,6 +523,7 @@
                     cpu: document.getElementById('monitor_cpu').checked,
                     network_up: document.getElementById('monitor_network_up').checked,
                     network_down: document.getElementById('monitor_network_down').checked,
+                    lan_wan_split: document.getElementById('monitor_lan_wan_split').checked,
                     disk_root: document.getElementById('monitor_disk_root').checked,
                     disk_io: document.getElementById('monitor_disk_io').checked
                 },

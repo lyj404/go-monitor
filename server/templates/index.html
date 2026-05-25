@@ -357,6 +357,7 @@
                 </div>
                 <div class="value" id="netUpload">--</div>
                 <div class="detail" id="netUploadUnit">字节/3秒</div>
+                <div class="detail" id="netUploadDetail" style="font-size:12px;color:var(--text-muted);margin-top:2px"></div>
             </div>
             
             <div class="card">
@@ -371,6 +372,7 @@
                 </div>
                 <div class="value" id="netDownload">--</div>
                 <div class="detail" id="netDownloadUnit">字节/3秒</div>
+                <div class="detail" id="netDownloadDetail" style="font-size:12px;color:var(--text-muted);margin-top:2px"></div>
             </div>
             
             <div class="card">
@@ -524,6 +526,14 @@
                         document.getElementById('netUploadUnit').textContent = unitText;
                         document.getElementById('netDownloadUnit').textContent = unitText;
                     }
+                    if (data.network.lan_upload !== undefined) {
+                        document.getElementById('netUploadDetail').textContent =
+                            '内网 ' + formatBytes(data.network.lan_upload) +
+                            ' · 公网 ' + formatBytes(data.network.wan_upload);
+                        document.getElementById('netDownloadDetail').textContent =
+                            '内网 ' + formatBytes(data.network.lan_download) +
+                            ' · 公网 ' + formatBytes(data.network.wan_download);
+                    }
                 }
                 
                 if (data.disk) {
@@ -559,16 +569,27 @@
                     fetch('/api/history/monthly').then(r => r.json())
                 ]);
                 
+                function netCell(upload, download, lanUp, lanDown, wanUp, wanDown) {
+                    var hasSplit = (lanUp !== undefined && lanUp !== null);
+                    var uploadStr = formatBytes(upload);
+                    var downloadStr = formatBytes(download);
+                    if (hasSplit) {
+                        uploadStr += '<br><span style="font-size:11px;color:var(--text-muted)">内 ' + formatBytes(lanUp) + ' / 公 ' + formatBytes(wanUp) + '</span>';
+                        downloadStr += '<br><span style="font-size:11px;color:var(--text-muted)">内 ' + formatBytes(lanDown) + ' / 公 ' + formatBytes(wanDown) + '</span>';
+                    }
+                    return '<td>'+uploadStr+'</td><td>'+downloadStr+'</td>';
+                }
+
                 if (daily.length > 0) {
-                    document.getElementById('dailyTable').innerHTML = daily.map(d => 
-                        '<tr><td>'+d.date+'</td><td>'+formatBytes(d.upload)+'</td><td>'+formatBytes(d.download)+'</td></tr>'
-                    ).join('');
+                    document.getElementById('dailyTable').innerHTML = daily.map(function(d) {
+                        return '<tr><td>'+d.date+'</td>' + netCell(d.upload, d.download, d.lan_upload, d.lan_download, d.wan_upload, d.wan_download) + '</tr>';
+                    }).join('');
                 }
                 
                 if (monthly.length > 0) {
-                    document.getElementById('monthlyTable').innerHTML = monthly.map(m => 
-                        '<tr><td>'+m.year_month+'</td><td>'+formatBytes(m.upload)+'</td><td>'+formatBytes(m.download)+'</td></tr>'
-                    ).join('');
+                    document.getElementById('monthlyTable').innerHTML = monthly.map(function(m) {
+                        return '<tr><td>'+m.year_month+'</td>' + netCell(m.upload, m.download, m.lan_upload, m.lan_download, m.wan_upload, m.wan_download) + '</tr>';
+                    }).join('');
                 }
             } catch(e) { console.error(e); }
         }

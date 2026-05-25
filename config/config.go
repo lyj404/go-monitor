@@ -45,6 +45,7 @@ type MonitorConfig struct {
 	CPU         bool `yaml:"cpu"`
 	NetworkUp   bool `yaml:"network_up"`
 	NetworkDown bool `yaml:"network_down"`
+	LanWanSplit bool `yaml:"lan_wan_split"`
 	DiskRoot    bool `yaml:"disk_root"`
 	DiskIO      bool `yaml:"disk_io"`
 }
@@ -152,13 +153,14 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"password": maskPlaceholder,
 		},
 		"monitor": map[string]interface{}{
-			"interval":     c.Monitor.Interval,
-			"memory":       c.Monitor.Memory,
-			"cpu":          c.Monitor.CPU,
-			"network_up":   c.Monitor.NetworkUp,
-			"network_down": c.Monitor.NetworkDown,
-			"disk_root":    c.Monitor.DiskRoot,
-			"disk_io":      c.Monitor.DiskIO,
+			"interval":      c.Monitor.Interval,
+			"memory":        c.Monitor.Memory,
+			"cpu":           c.Monitor.CPU,
+			"network_up":    c.Monitor.NetworkUp,
+			"network_down":  c.Monitor.NetworkDown,
+			"lan_wan_split": c.Monitor.LanWanSplit,
+			"disk_root":     c.Monitor.DiskRoot,
+			"disk_io":       c.Monitor.DiskIO,
 		},
 		"smtp": map[string]interface{}{
 			"host": c.SMTP.Host,
@@ -303,6 +305,9 @@ func applyUpdates(c *Config, updated map[string]interface{}) {
 		}
 		if v, ok := mon["network_down"].(bool); ok {
 			c.Monitor.NetworkDown = v
+		}
+		if v, ok := mon["lan_wan_split"].(bool); ok {
+			c.Monitor.LanWanSplit = v
 		}
 		if v, ok := mon["disk_root"].(bool); ok {
 			c.Monitor.DiskRoot = v

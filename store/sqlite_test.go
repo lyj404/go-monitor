@@ -25,7 +25,7 @@ func TestSaveHourlyNetworkPersistsZeroTrafficDay(t *testing.T) {
 	}
 	defer db.Close()
 
-	if err := db.SaveHourlyNetwork(0, 0, time.UTC); err != nil {
+	if err := db.SaveHourlyNetwork(0, 0, 0, 0, 0, 0, time.UTC); err != nil {
 		t.Fatalf("save hourly zero traffic: %v", err)
 	}
 
@@ -40,6 +40,9 @@ func TestSaveHourlyNetworkPersistsZeroTrafficDay(t *testing.T) {
 	if rows[0].Upload != 0 || rows[0].Download != 0 {
 		t.Fatalf("expected zero totals, got upload=%d download=%d", rows[0].Upload, rows[0].Download)
 	}
+	if rows[0].LanUpload != 0 || rows[0].LanDownload != 0 || rows[0].WanUpload != 0 || rows[0].WanDownload != 0 {
+		t.Fatalf("expected zero lan/wan, got lan_up=%d lan_down=%d wan_up=%d wan_down=%d", rows[0].LanUpload, rows[0].LanDownload, rows[0].WanUpload, rows[0].WanDownload)
+	}
 }
 
 func TestSaveMonthlyNetworkPersistsZeroTrafficMonth(t *testing.T) {
@@ -51,7 +54,7 @@ func TestSaveMonthlyNetworkPersistsZeroTrafficMonth(t *testing.T) {
 	}
 	defer db.Close()
 
-	if err := db.SaveHourlyNetwork(0, 0, time.UTC); err != nil {
+	if err := db.SaveHourlyNetwork(0, 0, 0, 0, 0, 0, time.UTC); err != nil {
 		t.Fatalf("seed daily zero traffic: %v", err)
 	}
 	if err := db.SaveMonthlyNetwork(time.UTC); err != nil {
@@ -68,5 +71,8 @@ func TestSaveMonthlyNetworkPersistsZeroTrafficMonth(t *testing.T) {
 	}
 	if rows[0].Upload != 0 || rows[0].Download != 0 {
 		t.Fatalf("expected zero totals, got upload=%d download=%d", rows[0].Upload, rows[0].Download)
+	}
+	if rows[0].LanUpload != 0 || rows[0].LanDownload != 0 || rows[0].WanUpload != 0 || rows[0].WanDownload != 0 {
+		t.Fatalf("expected zero lan/wan, got lan_up=%d lan_down=%d wan_up=%d wan_down=%d", rows[0].LanUpload, rows[0].LanDownload, rows[0].WanUpload, rows[0].WanDownload)
 	}
 }

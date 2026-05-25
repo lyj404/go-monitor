@@ -21,6 +21,10 @@ monitor:
   cpu: true
   network_up: true
   network_down: true
+  # lan_wan_split: 将网络流量按局域网/公网分别统计。
+  # 自动使用 nftables（优先）或 iptables+ip6tables 作为后端。
+  # 需要 root/CAP_NET_ADMIN 权限。
+  # lan_wan_split: false
   disk_root: true
   disk_io: true
 smtp:

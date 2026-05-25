@@ -19,19 +19,27 @@ type DB struct {
 }
 
 type DailyNetwork struct {
-	ID        int    `json:"id"`
-	Date      string `json:"date"`
-	Upload    int64  `json:"upload"`
-	Download  int64  `json:"download"`
-	CreatedAt int64  `json:"created_at"`
+	ID          int    `json:"id"`
+	Date        string `json:"date"`
+	Upload      int64  `json:"upload"`
+	Download    int64  `json:"download"`
+	LanUpload   int64  `json:"lan_upload,omitempty"`
+	LanDownload int64  `json:"lan_download,omitempty"`
+	WanUpload   int64  `json:"wan_upload,omitempty"`
+	WanDownload int64  `json:"wan_download,omitempty"`
+	CreatedAt   int64  `json:"created_at"`
 }
 
 type MonthlyNetwork struct {
-	ID        int    `json:"id"`
-	YearMonth string `json:"year_month"`
-	Upload    int64  `json:"upload"`
-	Download  int64  `json:"download"`
-	CreatedAt int64  `json:"created_at"`
+	ID          int    `json:"id"`
+	YearMonth   string `json:"year_month"`
+	Upload      int64  `json:"upload"`
+	Download    int64  `json:"download"`
+	LanUpload   int64  `json:"lan_upload,omitempty"`
+	LanDownload int64  `json:"lan_download,omitempty"`
+	WanUpload   int64  `json:"wan_upload,omitempty"`
+	WanDownload int64  `json:"wan_download,omitempty"`
+	CreatedAt   int64  `json:"created_at"`
 }
 
 func NewDB(path string) (*DB, error) {
@@ -106,6 +114,22 @@ func (s *DB) init() error {
 	// Drop legacy hand-rolled indexes — UNIQUE() already provides them.
 	_, _ = s.db.Exec(`DROP INDEX IF EXISTS idx_daily_network_date`)
 	_, _ = s.db.Exec(`DROP INDEX IF EXISTS idx_monthly_network_year_month`)
+
+	// Migration: add LAN/WAN columns for existing databases.
+	migrateCols := []string{
+		"ALTER TABLE daily_network ADD COLUMN lan_upload INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_network ADD COLUMN lan_download INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_network ADD COLUMN wan_upload INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_network ADD COLUMN wan_download INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE monthly_network ADD COLUMN lan_upload INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE monthly_network ADD COLUMN lan_download INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE monthly_network ADD COLUMN wan_upload INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE monthly_network ADD COLUMN wan_download INTEGER NOT NULL DEFAULT 0",
+	}
+	for _, m := range migrateCols {
+		_, _ = s.db.Exec(m)
+	}
+
 	return nil
 }
 
@@ -121,7 +145,7 @@ func aggregationLocation(cfg *config.Config) *time.Location {
 	return time.UTC
 }
 
-func (s *DB) SaveHourlyNetwork(upload, download int64, loc *time.Location) error {
+func (s *DB) SaveHourlyNetwork(upload, download, lanUp, lanDown, wanUp, wanDown int64, loc *time.Location) error {
 	if loc == nil {
 		loc = time.UTC
 	}
@@ -129,19 +153,23 @@ func (s *DB) SaveHourlyNetwork(upload, download int64, loc *time.Location) error
 	date := now.Format("2006-01-02")
 
 	_, err := s.db.Exec(`
-		INSERT INTO daily_network (date, upload, download, created_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO daily_network (date, upload, download, lan_upload, lan_download, wan_upload, wan_download, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(date) DO UPDATE SET
 			upload = daily_network.upload + excluded.upload,
 			download = daily_network.download + excluded.download,
+			lan_upload = daily_network.lan_upload + excluded.lan_upload,
+			lan_download = daily_network.lan_download + excluded.lan_download,
+			wan_upload = daily_network.wan_upload + excluded.wan_upload,
+			wan_download = daily_network.wan_download + excluded.wan_download,
 			created_at = excluded.created_at
-	`, date, upload, download, now.Unix())
+	`, date, upload, download, lanUp, lanDown, wanUp, wanDown, now.Unix())
 
 	return err
 }
 
 func (s *DB) GetDailyNetwork(startDate, endDate string, limit int) ([]DailyNetwork, error) {
-	query := `SELECT id, date, upload, download, created_at FROM daily_network WHERE date >= ? AND date <= ? ORDER BY date DESC`
+	query := `SELECT id, date, upload, download, COALESCE(lan_upload,0), COALESCE(lan_download,0), COALESCE(wan_upload,0), COALESCE(wan_download,0), created_at FROM daily_network WHERE date >= ? AND date <= ? ORDER BY date DESC`
 	args := []interface{}{startDate, endDate}
 	if limit > 0 {
 		query += ` LIMIT ?`
@@ -156,7 +184,7 @@ func (s *DB) GetDailyNetwork(startDate, endDate string, limit int) ([]DailyNetwo
 	var result []DailyNetwork
 	for rows.Next() {
 		var d DailyNetwork
-		if err := rows.Scan(&d.ID, &d.Date, &d.Upload, &d.Download, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Date, &d.Upload, &d.Download, &d.LanUpload, &d.LanDownload, &d.WanUpload, &d.WanDownload, &d.CreatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, d)
@@ -176,25 +204,31 @@ func (s *DB) SaveMonthlyNetwork(loc *time.Location) error {
 	startDate := yearMonth + "-01"
 	endDate := now.Format("2006-01-02")
 
-	var totalUpload, totalDownload int64
+	var totalUpload, totalDownload, totalLanUp, totalLanDown, totalWanUp, totalWanDown int64
 	err := s.db.QueryRow(`
-		SELECT COALESCE(SUM(upload), 0), COALESCE(SUM(download), 0)
+		SELECT COALESCE(SUM(upload), 0), COALESCE(SUM(download), 0),
+		       COALESCE(SUM(lan_upload), 0), COALESCE(SUM(lan_download), 0),
+		       COALESCE(SUM(wan_upload), 0), COALESCE(SUM(wan_download), 0)
 		FROM daily_network
 		WHERE date >= ? AND date <= ?
-	`, startDate, endDate).Scan(&totalUpload, &totalDownload)
+	`, startDate, endDate).Scan(&totalUpload, &totalDownload, &totalLanUp, &totalLanDown, &totalWanUp, &totalWanDown)
 
 	if err != nil {
 		return err
 	}
 
 	_, err = s.db.Exec(`
-		INSERT INTO monthly_network (year_month, upload, download, created_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO monthly_network (year_month, upload, download, lan_upload, lan_download, wan_upload, wan_download, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(year_month) DO UPDATE SET
 			upload = excluded.upload,
 			download = excluded.download,
+			lan_upload = excluded.lan_upload,
+			lan_download = excluded.lan_download,
+			wan_upload = excluded.wan_upload,
+			wan_download = excluded.wan_download,
 			created_at = excluded.created_at
-	`, yearMonth, totalUpload, totalDownload, now.Unix())
+	`, yearMonth, totalUpload, totalDownload, totalLanUp, totalLanDown, totalWanUp, totalWanDown, now.Unix())
 
 	return err
 }
@@ -236,7 +270,7 @@ func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, cfg *config.Config) {
 }
 
 func (s *DB) GetMonthlyNetwork(startMonth, endMonth string, limit int) ([]MonthlyNetwork, error) {
-	query := `SELECT id, year_month, upload, download, created_at FROM monthly_network WHERE year_month >= ? AND year_month <= ? ORDER BY year_month DESC`
+	query := `SELECT id, year_month, upload, download, COALESCE(lan_upload,0), COALESCE(lan_download,0), COALESCE(wan_upload,0), COALESCE(wan_download,0), created_at FROM monthly_network WHERE year_month >= ? AND year_month <= ? ORDER BY year_month DESC`
 	args := []interface{}{startMonth, endMonth}
 	if limit > 0 {
 		query += ` LIMIT ?`
@@ -251,7 +285,7 @@ func (s *DB) GetMonthlyNetwork(startMonth, endMonth string, limit int) ([]Monthl
 	var result []MonthlyNetwork
 	for rows.Next() {
 		var m MonthlyNetwork
-		if err := rows.Scan(&m.ID, &m.YearMonth, &m.Upload, &m.Download, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.YearMonth, &m.Upload, &m.Download, &m.LanUpload, &m.LanDownload, &m.WanUpload, &m.WanDownload, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, m)
@@ -286,8 +320,8 @@ func (s *DB) CleanOldData(retentionDays, retentionMonths int) error {
 func (s *DB) runHourlyTasks(cfg *config.Config) {
 	loc := aggregationLocation(cfg)
 
-	upload, download := collector.GetHourlyTotalsAndReset()
-	if err := s.SaveHourlyNetwork(upload, download, loc); err != nil {
+	upload, download, lanUp, lanDown, wanUp, wanDown := collector.GetHourlyTotalsAndReset()
+	if err := s.SaveHourlyNetwork(upload, download, lanUp, lanDown, wanUp, wanDown, loc); err != nil {
 		log.Println("保存每小时网络数据失败:", err)
 	}
 

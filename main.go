@@ -43,8 +43,16 @@ func main() {
 	}
 
 	col := collector.NewCollector(cfg, al)
+	if cfg.Monitor.LanWanSplit {
+		if err := collector.EnableLanWanSplit(); err != nil {
+			log.Println("LAN/WAN 流量分类初始化失败（nftables 不可用）:", err)
+		} else {
+			log.Println("LAN/WAN 流量分类已启用")
+		}
+	}
 	col.Start()
 	defer col.Stop()
+	defer collector.DisableLanWanSplit()
 
 	db, err := store.NewDB(dataDir)
 	if err != nil {
