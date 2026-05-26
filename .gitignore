@@ -1,3 +1,5 @@
 go-monitor
 data/
 config.yaml
+*.exe
+.opencode/
