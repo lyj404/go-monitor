@@ -59,7 +59,13 @@ var (
 	totalWanDownload int64
 )
 
-var nftRegexp = regexp.MustCompile(`^\s*counter\s+(\S+)\s*\{\s*packets\s+\d+\s+bytes\s+(\d+)\s*\}`)
+// nftables function pointers — default to exec-based implementations.
+// On Linux, init() in nftables_netlink_linux.go replaces them with netlink.
+var (
+	initNftablesCounters   func() error                                          = initNftablesCountersExec
+	cleanupNftablesCounters func()                                                = cleanupNftablesCountersExec
+	readNftablesCounters   func() (lanIngress, lanEgress, wanIngress, wanEgress int64, err error) = readNftablesCountersExec
+)
 
 func InitNetwork() {
 	networkMu.Lock()
@@ -115,8 +121,11 @@ func DisableLanWanSplit() {
 }
 
 // ---------------------------------------------------------------------------
-// nftables helpers
+// nftables helpers — default exec-based implementations
+// (replaced by netlink on Linux via nftables_netlink_linux.go)
 // ---------------------------------------------------------------------------
+
+var nftRegexp = regexp.MustCompile(`^\s*counter\s+(\S+)\s*\{\s*packets\s+\d+\s+bytes\s+(\d+)\s*\}`)
 
 func runNft(args ...string) error {
 	cmd := exec.Command("nft", args...)
@@ -126,7 +135,7 @@ func runNft(args ...string) error {
 	return nil
 }
 
-func initNftablesCounters() error {
+func initNftablesCountersExec() error {
 	_ = runNft("delete", "table", "inet", "monitor")
 
 	if err := runNft("add", "table", "inet", "monitor"); err != nil {
@@ -190,11 +199,11 @@ func initNftablesCounters() error {
 	return nil
 }
 
-func cleanupNftablesCounters() {
+func cleanupNftablesCountersExec() {
 	_ = runNft("delete", "table", "inet", "monitor")
 }
 
-func readNftablesCounters() (lanIngress, lanEgress, wanIngress, wanEgress int64, err error) {
+func readNftablesCountersExec() (lanIngress, lanEgress, wanIngress, wanEgress int64, err error) {
 	cmd := exec.Command("nft", "list", "table", "inet", "monitor")
 	out, err := cmd.Output()
 	if err != nil {
