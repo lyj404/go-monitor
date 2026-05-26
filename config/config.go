@@ -13,18 +13,28 @@ import (
 
 const maskPlaceholder = "****"
 
-type Config struct {
-	cfgPath string `yaml:"-"`
-
-	mu     sync.RWMutex `yaml:"-"`
-	saveMu sync.Mutex   `yaml:"-"`
-
+// Snapshot is an immutable, point-in-time copy of the configuration.
+// It contains no synchronization primitives, so it is safe to copy by value
+// and pass between goroutines.
+type Snapshot struct {
 	Name    string        `yaml:"name"`
 	Server  ServerConfig  `yaml:"server"`
 	Auth    AuthConfig    `yaml:"auth"`
 	Monitor MonitorConfig `yaml:"monitor"`
 	SMTP    SMTPConfig    `yaml:"smtp"`
 	Alert   AlertConfig   `yaml:"alert"`
+}
+
+// Config is the mutable holder for the live configuration. It owns the
+// synchronization and the on-disk path; the data lives in an inner Snapshot
+// so callers never copy mutex state. Always use *Config — never copy by value.
+type Config struct {
+	cfgPath string
+
+	mu     sync.RWMutex
+	saveMu sync.Mutex
+
+	data Snapshot
 }
 
 type ServerConfig struct {
@@ -80,19 +90,16 @@ type AlertConfig struct {
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
 }
 
-type fileConfig struct {
-	Name    string        `yaml:"name"`
-	Server  ServerConfig  `yaml:"server"`
-	Auth    AuthConfig    `yaml:"auth"`
-	Monitor MonitorConfig `yaml:"monitor"`
-	SMTP    SMTPConfig    `yaml:"smtp"`
-	Alert   AlertConfig   `yaml:"alert"`
+// FromSnapshot builds a Config from a value-typed Snapshot. Intended for
+// tests that need to construct a Config without going through Load().
+func FromSnapshot(path string, snap Snapshot) *Config {
+	return &Config{cfgPath: path, data: cloneSnapshot(snap)}
 }
 
-func (c *Config) Snapshot() Config {
+func (c *Config) Snapshot() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.cloneLocked()
+	return cloneSnapshot(c.data)
 }
 
 func Load(path string) (*Config, error) {
@@ -101,38 +108,36 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var snap Snapshot
+	if err := yaml.Unmarshal(data, &snap); err != nil {
 		return nil, err
 	}
 
-	cfg.cfgPath = path
-
-	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 8080
+	if snap.Server.Port == 0 {
+		snap.Server.Port = 8080
 	}
 
-	if cfg.Monitor.Interval == 0 {
-		cfg.Monitor.Interval = 3
+	if snap.Monitor.Interval == 0 {
+		snap.Monitor.Interval = 3
 	}
 
-	if cfg.Alert.Interval == 0 {
-		cfg.Alert.Interval = 300
+	if snap.Alert.Interval == 0 {
+		snap.Alert.Interval = 300
 	}
 
-	if cfg.Alert.RetentionDays == 0 {
-		cfg.Alert.RetentionDays = 30
+	if snap.Alert.RetentionDays == 0 {
+		snap.Alert.RetentionDays = 30
 	}
 
-	if cfg.Alert.MonthlyRetentionMonths == 0 {
-		cfg.Alert.MonthlyRetentionMonths = 12
+	if snap.Alert.MonthlyRetentionMonths == 0 {
+		snap.Alert.MonthlyRetentionMonths = 12
 	}
 
-	if err := validate(&cfg); err != nil {
+	if err := validate(&snap); err != nil {
 		return nil, err
 	}
 
-	return &cfg, nil
+	return &Config{cfgPath: path, data: snap}, nil
 }
 
 // MaskSensitive returns a copy with password fields replaced by ****
@@ -141,54 +146,54 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 	defer c.mu.RUnlock()
 
 	return map[string]interface{}{
-		"name": c.Name,
+		"name": c.data.Name,
 		"server": map[string]interface{}{
-			"port":        c.Server.Port,
-			"data_dir":    c.Server.DataDir,
-			"trust_proxy": c.Server.TrustProxy,
-			"timezone":    c.Server.Timezone,
+			"port":        c.data.Server.Port,
+			"data_dir":    c.data.Server.DataDir,
+			"trust_proxy": c.data.Server.TrustProxy,
+			"timezone":    c.data.Server.Timezone,
 		},
 		"auth": map[string]interface{}{
-			"username": c.Auth.Username,
+			"username": c.data.Auth.Username,
 			"password": maskPlaceholder,
 		},
 		"monitor": map[string]interface{}{
-			"interval":      c.Monitor.Interval,
-			"memory":        c.Monitor.Memory,
-			"cpu":           c.Monitor.CPU,
-			"network_up":    c.Monitor.NetworkUp,
-			"network_down":  c.Monitor.NetworkDown,
-			"lan_wan_split": c.Monitor.LanWanSplit,
-			"disk_root":     c.Monitor.DiskRoot,
-			"disk_io":       c.Monitor.DiskIO,
+			"interval":      c.data.Monitor.Interval,
+			"memory":        c.data.Monitor.Memory,
+			"cpu":           c.data.Monitor.CPU,
+			"network_up":    c.data.Monitor.NetworkUp,
+			"network_down":  c.data.Monitor.NetworkDown,
+			"lan_wan_split": c.data.Monitor.LanWanSplit,
+			"disk_root":     c.data.Monitor.DiskRoot,
+			"disk_io":       c.data.Monitor.DiskIO,
 		},
 		"smtp": map[string]interface{}{
-			"host": c.SMTP.Host,
-			"port": c.SMTP.Port,
-			"user": c.SMTP.User,
+			"host": c.data.SMTP.Host,
+			"port": c.data.SMTP.Port,
+			"user": c.data.SMTP.User,
 			"pass": maskPlaceholder,
-			"to":   c.SMTP.To,
+			"to":   c.data.SMTP.To,
 		},
 		"alert": map[string]interface{}{
-			"enabled":                  c.Alert.Enabled,
-			"memory":                   c.Alert.Memory,
-			"memory_threshold":         c.Alert.MemoryThreshold,
-			"cpu":                      c.Alert.CPU,
-			"cpu_threshold":            c.Alert.CPUThreshold,
-			"disk":                     c.Alert.Disk,
-			"disk_threshold":           c.Alert.DiskThreshold,
-			"network_up":               c.Alert.NetworkUp,
-			"network_up_threshold":     c.Alert.NetworkUpThreshold,
-			"network_down":             c.Alert.NetworkDown,
-			"network_down_threshold":   c.Alert.NetworkDownThreshold,
-			"disk_read":                c.Alert.DiskRead,
-			"disk_read_threshold":      c.Alert.DiskReadThreshold,
-			"disk_write":               c.Alert.DiskWrite,
-			"disk_write_threshold":     c.Alert.DiskWriteThreshold,
-			"interval":                 c.Alert.Interval,
-			"duration":                 c.Alert.Duration,
-			"retention_days":           c.Alert.RetentionDays,
-			"monthly_retention_months": c.Alert.MonthlyRetentionMonths,
+			"enabled":                  c.data.Alert.Enabled,
+			"memory":                   c.data.Alert.Memory,
+			"memory_threshold":         c.data.Alert.MemoryThreshold,
+			"cpu":                      c.data.Alert.CPU,
+			"cpu_threshold":            c.data.Alert.CPUThreshold,
+			"disk":                     c.data.Alert.Disk,
+			"disk_threshold":           c.data.Alert.DiskThreshold,
+			"network_up":               c.data.Alert.NetworkUp,
+			"network_up_threshold":     c.data.Alert.NetworkUpThreshold,
+			"network_down":             c.data.Alert.NetworkDown,
+			"network_down_threshold":   c.data.Alert.NetworkDownThreshold,
+			"disk_read":                c.data.Alert.DiskRead,
+			"disk_read_threshold":      c.data.Alert.DiskReadThreshold,
+			"disk_write":               c.data.Alert.DiskWrite,
+			"disk_write_threshold":     c.data.Alert.DiskWriteThreshold,
+			"interval":                 c.data.Alert.Interval,
+			"duration":                 c.data.Alert.Duration,
+			"retention_days":           c.data.Alert.RetentionDays,
+			"monthly_retention_months": c.data.Alert.MonthlyRetentionMonths,
 		},
 	}
 }
@@ -203,65 +208,40 @@ func (c *Config) Reload(updated map[string]interface{}) (bool, error) {
 	defer c.saveMu.Unlock()
 
 	c.mu.RLock()
-	oldInterval := c.Monitor.Interval
-	updatedCfg := c.cloneLocked()
+	oldInterval := c.data.Monitor.Interval
+	updatedSnap := cloneSnapshot(c.data)
+	cfgPath := c.cfgPath
 	c.mu.RUnlock()
 
-	applyUpdates(&updatedCfg, updated)
-	if err := validate(&updatedCfg); err != nil {
+	applyUpdates(&updatedSnap, updated)
+	if err := validate(&updatedSnap); err != nil {
 		return false, err
 	}
 
-	log.Println("保存配置到文件:", updatedCfg.cfgPath)
-	if err := saveConfig(updatedCfg.cfgPath, updatedCfg); err != nil {
+	log.Println("保存配置到文件:", cfgPath)
+	if err := saveConfig(cfgPath, updatedSnap); err != nil {
 		log.Println("保存文件失败:", err)
 		return false, err
 	}
 
 	c.mu.Lock()
-	c.applyLocked(updatedCfg)
-	intervalChanged := c.Monitor.Interval != oldInterval
+	c.data = updatedSnap
+	intervalChanged := c.data.Monitor.Interval != oldInterval
 	c.mu.Unlock()
 
 	log.Println("配置保存成功")
 	return intervalChanged, nil
 }
 
-func (c *Config) cloneLocked() Config {
-	return Config{
-		cfgPath: c.cfgPath,
-		Name:    c.Name,
-		Server:  c.Server,
-		Auth:    c.Auth,
-		Monitor: c.Monitor,
-		SMTP: SMTPConfig{
-			Host: c.SMTP.Host,
-			Port: c.SMTP.Port,
-			User: c.SMTP.User,
-			Pass: c.SMTP.Pass,
-			To:   append([]string{}, c.SMTP.To...),
-		},
-		Alert: c.Alert,
+func cloneSnapshot(s Snapshot) Snapshot {
+	out := s
+	if s.SMTP.To != nil {
+		out.SMTP.To = append([]string{}, s.SMTP.To...)
 	}
+	return out
 }
 
-func (c *Config) applyLocked(updated Config) {
-	c.cfgPath = updated.cfgPath
-	c.Name = updated.Name
-	c.Server = updated.Server
-	c.Auth = updated.Auth
-	c.Monitor = updated.Monitor
-	c.SMTP = SMTPConfig{
-		Host: updated.SMTP.Host,
-		Port: updated.SMTP.Port,
-		User: updated.SMTP.User,
-		Pass: updated.SMTP.Pass,
-		To:   append([]string{}, updated.SMTP.To...),
-	}
-	c.Alert = updated.Alert
-}
-
-func applyUpdates(c *Config, updated map[string]interface{}) {
+func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 	if name, ok := updated["name"].(string); ok {
 		c.Name = name
 	}
@@ -404,15 +384,8 @@ func applyUpdates(c *Config, updated map[string]interface{}) {
 	}
 }
 
-func saveConfig(path string, cfg Config) error {
-	data, err := yaml.Marshal(fileConfig{
-		Name:    cfg.Name,
-		Server:  cfg.Server,
-		Auth:    cfg.Auth,
-		Monitor: cfg.Monitor,
-		SMTP:    cfg.SMTP,
-		Alert:   cfg.Alert,
-	})
+func saveConfig(path string, snap Snapshot) error {
+	data, err := yaml.Marshal(snap)
 	if err != nil {
 		return err
 	}
@@ -436,7 +409,7 @@ func saveConfig(path string, cfg Config) error {
 	return os.Rename(tmpPath, path)
 }
 
-func validate(c *Config) error {
+func validate(c *Snapshot) error {
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server.port: %d", c.Server.Port)
 	}

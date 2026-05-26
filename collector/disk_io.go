@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -66,6 +67,8 @@ func CollectDiskIO() (*DiskIO, error) {
 	defer f.Close()
 
 	var deltaRead, deltaWrite int64
+	var counterRegressed bool
+	var regressedDisk string
 
 	diskIOMu.Lock()
 	defer diskIOMu.Unlock()
@@ -92,10 +95,13 @@ func CollectDiskIO() (*DiskIO, error) {
 
 		last, exists := lastDiskStats[name]
 		if exists {
-			if readBytes >= last.read {
+			if readBytes < last.read || writeBytes < last.write {
+				counterRegressed = true
+				if regressedDisk == "" {
+					regressedDisk = name
+				}
+			} else {
 				deltaRead += readBytes - last.read
-			}
-			if writeBytes >= last.write {
 				deltaWrite += writeBytes - last.write
 			}
 		}
@@ -106,12 +112,21 @@ func CollectDiskIO() (*DiskIO, error) {
 		}
 	}
 
+	if counterRegressed {
+		log.Printf("磁盘 IO 计数器回退，跳过本轮速率计算 (disk=%s)", regressedDisk)
+		lastDiskSampled = now
+		return &DiskIO{}, nil
+	}
+
 	var rateR, rateW int64
 	if !lastDiskSampled.IsZero() {
 		elapsed := now.Sub(lastDiskSampled).Seconds()
-		if elapsed > 0 {
+		const maxElapsedSeconds = 600.0
+		if elapsed > 0 && elapsed <= maxElapsedSeconds {
 			rateR = int64(float64(deltaRead) / elapsed)
 			rateW = int64(float64(deltaWrite) / elapsed)
+		} else if elapsed > maxElapsedSeconds {
+			log.Printf("磁盘 IO 采集间隔异常 (%.1fs)，跳过本轮速率计算", elapsed)
 		}
 	}
 	lastDiskSampled = now

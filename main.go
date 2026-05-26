@@ -28,14 +28,16 @@ func main() {
 		log.Fatal("加载配置失败:", err)
 	}
 
-	dataDir, err := resolveDataDir(*cfgPath, cfg.Server.DataDir)
+	snap := cfg.Snapshot()
+
+	dataDir, err := resolveDataDir(*cfgPath, snap.Server.DataDir)
 	if err != nil {
 		log.Fatal("无法确定数据目录:", err)
 	}
 	log.Println("数据目录:", dataDir)
 
 	var al *alerter.Alerter
-	if cfg.Alert.Enabled {
+	if snap.Alert.Enabled {
 		al = alerter.New()
 		log.Println("报警功能已启用")
 	} else {
@@ -43,7 +45,7 @@ func main() {
 	}
 
 	col := collector.NewCollector(cfg, al)
-	if cfg.Monitor.LanWanSplit {
+	if snap.Monitor.LanWanSplit {
 		if err := collector.EnableLanWanSplit(); err != nil {
 			log.Println("LAN/WAN 流量分类初始化失败（nftables 不可用）:", err)
 		} else {
@@ -62,7 +64,7 @@ func main() {
 	svr := server.NewServer(cfg, col, db)
 	handler := svr.Routes()
 
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	addr := fmt.Sprintf(":%d", snap.Server.Port)
 	log.Println("服务器启动于 http://localhost" + addr)
 
 	srv := &http.Server{
@@ -91,23 +93,26 @@ func main() {
 
 	log.Println("正在关闭服务...")
 
-	col.Stop()
-	if db != nil {
-		db.Close()
-	}
-	svr.Close()
-	if al != nil {
-		al.Close()
-	}
-
+	// Drain in-flight HTTP requests first so handlers still see live
+	// collector/db references; only then stop background subsystems.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Println("服务器强制关闭:", err)
 	} else {
-		log.Println("服务已关闭")
+		log.Println("HTTP 服务已关闭")
 	}
+
+	svr.Close()
+	col.Stop()
+	if db != nil {
+		db.Close()
+	}
+	if al != nil {
+		al.Close()
+	}
+	log.Println("服务已关闭")
 }
 
 // resolveDataDir picks a stable data directory in this priority order:

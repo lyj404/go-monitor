@@ -64,7 +64,7 @@ func TestClientIP(t *testing.T) {
 func TestHistoryHandlersReturnDBUnavailableWhenDBNil(t *testing.T) {
 	t.Parallel()
 
-	s := &Server{cfg: &config.Config{}}
+	s := &Server{cfg: config.FromSnapshot("", config.Snapshot{})}
 
 	for _, tc := range []struct {
 		name    string

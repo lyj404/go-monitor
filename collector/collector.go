@@ -18,7 +18,7 @@ type Metrics struct {
 }
 
 type Alerter interface {
-	CheckWithConfig(Metrics, config.Config)
+	CheckWithConfig(Metrics, config.Snapshot)
 	Close()
 }
 
@@ -31,7 +31,7 @@ type Collector struct {
 	metricsJSON []byte
 
 	snapshotMu sync.RWMutex
-	snapshot   config.Config
+	snapshot   config.Snapshot
 
 	done     chan struct{}
 	reloadCh chan struct{}

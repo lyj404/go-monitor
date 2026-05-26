@@ -22,16 +22,15 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 func TestReloadIsAtomicWhenSaveFails(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{
-		cfgPath: filepath.Join(t.TempDir(), "missing", "config.yaml"),
-		Name:    "before",
+	cfg := FromSnapshot(filepath.Join(t.TempDir(), "missing", "config.yaml"), Snapshot{
+		Name: "before",
 		Auth: AuthConfig{
 			Username: "user",
 			Password: "pass",
 		},
 		Monitor: MonitorConfig{Interval: 3},
 		Alert:   AlertConfig{RetentionDays: 7},
-	}
+	})
 
 	updated := map[string]interface{}{
 		"name": "after",
@@ -65,13 +64,12 @@ func TestReloadPersistsOnlyAfterSuccessfulSave(t *testing.T) {
 		t.Fatalf("write seed config: %v", err)
 	}
 
-	cfg := &Config{
-		cfgPath: path,
+	cfg := FromSnapshot(path, Snapshot{
 		Server:  ServerConfig{Port: 8080},
 		Name:    "before",
 		Monitor: MonitorConfig{Interval: 3},
 		Alert:   AlertConfig{RetentionDays: 7, Interval: 60},
-	}
+	})
 
 	updated := map[string]interface{}{
 		"name": "after",
@@ -113,12 +111,11 @@ func TestReloadRejectsInvalidUpdate(t *testing.T) {
 		t.Fatalf("write seed config: %v", err)
 	}
 
-	cfg := &Config{
-		cfgPath: path,
+	cfg := FromSnapshot(path, Snapshot{
 		Server:  ServerConfig{Port: 8080},
 		Monitor: MonitorConfig{Interval: 3},
 		Alert:   AlertConfig{Interval: 60},
-	}
+	})
 
 	updated := map[string]interface{}{
 		"server": map[string]interface{}{

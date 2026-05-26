@@ -3,6 +3,7 @@ package collector
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -434,6 +435,8 @@ func CollectNetwork() (*Network, error) {
 	defer f.Close()
 
 	var deltaUpload, deltaDownload int64
+	var counterRegressed bool
+	var regressedIface string
 
 	networkMu.Lock()
 	defer networkMu.Unlock()
@@ -460,10 +463,13 @@ func CollectNetwork() (*Network, error) {
 
 		last, exists := lastNetworkStats[iface]
 		if exists {
-			if rx >= last.rx {
+			if rx < last.rx || tx < last.tx {
+				counterRegressed = true
+				if regressedIface == "" {
+					regressedIface = iface
+				}
+			} else {
 				deltaDownload += rx - last.rx
-			}
-			if tx >= last.tx {
 				deltaUpload += tx - last.tx
 			}
 		}
@@ -471,16 +477,33 @@ func CollectNetwork() (*Network, error) {
 		lastNetworkStats[iface] = netCounter{rx: rx, tx: tx}
 	}
 
+	// On counter regression (NIC reset, 32-bit wraparound, hot-plug),
+	// drop this round's delta entirely — reseed from the new baseline.
+	if counterRegressed {
+		log.Printf("网络计数器回退，跳过本轮速率计算 (iface=%s)", regressedIface)
+		lastNetworkSampled = now
+		return &Network{}, nil
+	}
+
 	totalUpload += deltaUpload
 	totalDownload += deltaDownload
+
+	// elapsed is computed via time.Now().Sub(), which uses Go's monotonic
+	// clock — wall-clock adjustments don't affect it. We still guard against
+	// elapsed == 0 (rapid successive calls) and abnormally large elapsed
+	// (process was suspended), which would yield meaningless rates.
+	const maxElapsedSeconds = 600.0
 
 	var rateUp, rateDown int64
 	var elapsed float64
 	if !lastNetworkSampled.IsZero() {
 		elapsed = now.Sub(lastNetworkSampled).Seconds()
-		if elapsed > 0 {
+		if elapsed > 0 && elapsed <= maxElapsedSeconds {
 			rateUp = int64(float64(deltaUpload) / elapsed)
 			rateDown = int64(float64(deltaDownload) / elapsed)
+		} else if elapsed > maxElapsedSeconds {
+			log.Printf("网络采集间隔异常 (%.1fs)，跳过本轮速率计算", elapsed)
+			elapsed = 0
 		}
 	}
 	lastNetworkSampled = now

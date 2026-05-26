@@ -19,7 +19,11 @@ import (
 	"go-monitor/store"
 )
 
-const maxConfigPayloadBytes = 1 << 20
+const (
+	maxConfigPayloadBytes = 1 << 20
+	maxSessions           = 10000
+	maxLoginLimitEntries  = 10000
+)
 
 type Server struct {
 	cfg             *config.Config
@@ -33,6 +37,9 @@ type Server struct {
 	indexHTMLBytes  []byte
 	loginHTMLBytes  []byte
 	configHTMLBytes []byte
+
+	configJSONMu    sync.RWMutex
+	configJSONBytes []byte
 }
 
 type sessionInfo struct {
@@ -114,6 +121,53 @@ func (s *Server) cleanupStaleOnce(now time.Time) {
 		}
 	}
 	s.limitMu.Unlock()
+}
+
+// evictSessionsLocked is called before inserting a new session. If the map is
+// at capacity, it first drops expired sessions; if still at capacity, it drops
+// the session that expires soonest. Caller must hold s.sessMu.
+func (s *Server) evictSessionsLocked(now time.Time) {
+	if len(s.sessions) < maxSessions {
+		return
+	}
+	for token, info := range s.sessions {
+		if now.After(info.expires) {
+			delete(s.sessions, token)
+		}
+	}
+	if len(s.sessions) < maxSessions {
+		return
+	}
+	var victim string
+	var earliest time.Time
+	for token, info := range s.sessions {
+		if victim == "" || info.expires.Before(earliest) {
+			victim = token
+			earliest = info.expires
+		}
+	}
+	if victim != "" {
+		delete(s.sessions, victim)
+	}
+}
+
+// evictOldestLoginLimitLocked drops the loginLimits entry with the oldest
+// lastSeen so that a fresh IP can be tracked. Caller must hold s.limitMu.
+func (s *Server) evictOldestLoginLimitLocked() {
+	var victim string
+	var oldest time.Time
+	for ip, attempt := range s.loginLimits {
+		if !attempt.lockedUntil.IsZero() {
+			continue
+		}
+		if victim == "" || attempt.lastSeen.Before(oldest) {
+			victim = ip
+			oldest = attempt.lastSeen
+		}
+	}
+	if victim != "" {
+		delete(s.loginLimits, victim)
+	}
 }
 
 func generateToken() (string, error) {
@@ -199,6 +253,9 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	s.limitMu.Lock()
 	attempt, exists := s.loginLimits[ip]
 	if !exists {
+		if len(s.loginLimits) >= maxLoginLimitEntries {
+			s.evictOldestLoginLimitLocked()
+		}
 		attempt = &loginAttempt{}
 		s.loginLimits[ip] = attempt
 	}
@@ -243,6 +300,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		expires := time.Now().Add(duration)
 
 		s.sessMu.Lock()
+		s.evictSessionsLocked(now)
 		s.sessions[token] = sessionInfo{
 			username: req.Username,
 			expires:  expires,
@@ -372,7 +430,38 @@ func (s *Server) configPageHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getConfigHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.cfg.MaskSensitive())
+	data, err := s.maskedConfigJSON()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "marshal config failed")
+		return
+	}
+	w.Write(data)
+}
+
+// maskedConfigJSON returns a cached JSON encoding of the masked config. The
+// cache is invalidated on every successful Reload.
+func (s *Server) maskedConfigJSON() ([]byte, error) {
+	s.configJSONMu.RLock()
+	cached := s.configJSONBytes
+	s.configJSONMu.RUnlock()
+	if cached != nil {
+		return cached, nil
+	}
+
+	data, err := json.Marshal(s.cfg.MaskSensitive())
+	if err != nil {
+		return nil, err
+	}
+	s.configJSONMu.Lock()
+	s.configJSONBytes = data
+	s.configJSONMu.Unlock()
+	return data, nil
+}
+
+func (s *Server) invalidateConfigJSON() {
+	s.configJSONMu.Lock()
+	s.configJSONBytes = nil
+	s.configJSONMu.Unlock()
 }
 
 func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +493,7 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.col.UpdateSnapshot()
+	s.invalidateConfigJSON()
 
 	if intervalChanged {
 		s.col.NotifyIntervalChanged()

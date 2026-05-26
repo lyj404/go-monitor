@@ -26,13 +26,13 @@ func TestSendDropsWhenQueueFull(t *testing.T) {
 	}
 	a.jobs <- emailJob{}
 
-	a.send("CPU", "body", config.Config{Alert: config.AlertConfig{Interval: 1}})
+	a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}})
 
 	if len(a.jobs) != 1 {
 		t.Fatalf("expected full queue to drop new job, len=%d", len(a.jobs))
 	}
-	if _, ok := a.lastSent["CPU"]; ok {
-		t.Fatal("expected dropped alert to roll back lastSent timestamp")
+	if _, ok := a.lastSent["CPU"]; !ok {
+		t.Fatal("expected lastSent to retain timestamp so dropped alert backs off until the next interval")
 	}
 }
 
@@ -62,7 +62,7 @@ func TestSendPrunesExpiredLastSent(t *testing.T) {
 		stopCh: make(chan struct{}),
 	}
 
-	a.send("CPU", "body", config.Config{Alert: config.AlertConfig{Interval: 1}})
+	a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}})
 
 	a.sendMu.Lock()
 	_, oldExists := a.lastSent["old"]

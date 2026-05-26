@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -76,6 +77,8 @@ func CollectCPU() (*CPU, error) {
 				// Counter went backward (hot-plug, container restart, wraparound).
 				// Discard this round and reseed from the new baseline.
 				monotonic = false
+				log.Printf("CPU 计数器回退 (idx=%d, last=%d, cur=%d)，跳过本轮计算",
+					i, lastCPUStats[i], curCPUStats[i])
 				break
 			}
 			diff := curCPUStats[i] - lastCPUStats[i]

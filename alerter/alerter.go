@@ -22,12 +22,13 @@ const (
 	defaultQueueSize   = 32
 	defaultWorkers     = 2
 	stateTTL           = 24 * time.Hour
+	closeTimeout       = 5 * time.Second
 )
 
 type emailJob struct {
 	subject string
 	body    string
-	cfg     config.Config
+	cfg     config.Snapshot
 }
 
 type Alerter struct {
@@ -64,11 +65,22 @@ func (a *Alerter) Close() {
 		a.closed = true
 		a.sendMu.Unlock()
 		close(a.stopCh)
-		a.wg.Wait()
+
+		done := make(chan struct{})
+		go func() {
+			a.wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(closeTimeout):
+			log.Printf("报警 worker 关闭超时 (%.0fs)，存在进行中的 SMTP 投递", closeTimeout.Seconds())
+		}
 	})
 }
 
-func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Config) {
+func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	if !cfg.Alert.Enabled {
 		return
 	}
@@ -147,7 +159,7 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 	return false
 }
 
-func (a *Alerter) send(subject, body string, cfg config.Config) {
+func (a *Alerter) send(subject, body string, cfg config.Snapshot) {
 	interval := time.Duration(cfg.Alert.Interval) * time.Second
 	now := time.Now()
 
@@ -168,10 +180,9 @@ func (a *Alerter) send(subject, body string, cfg config.Config) {
 	select {
 	case a.jobs <- job:
 	default:
-		log.Printf("报警队列已满，丢弃邮件 [%s]", subject)
-		a.sendMu.Lock()
-		delete(a.lastSent, subject)
-		a.sendMu.Unlock()
+		// Queue is full. Keep lastSent[subject] so the next tick doesn't
+		// immediately retry and pile up more drops — wait out the interval.
+		log.Printf("报警队列已满，丢弃邮件 [%s]，等待下一个发送窗口", subject)
 	}
 }
 
@@ -206,18 +217,39 @@ func (a *Alerter) deliver(job emailJob) {
 	now := time.Now()
 	serverTime := now.Format("2006-01-02 15:04:05 MST")
 	beijingTime := now.In(loc).Format("2006-01-02 15:04:05 MST")
-	emailBody := fmt.Sprintf(
-		"服务器: %s\n%s\n服务器时间: %s\n北京时间: %s",
-		cfg.Name,
-		body,
-		serverTime,
-		beijingTime,
-	)
-	encodedSubject := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("[监控报警][%s] %s", cfg.Name, subject)))
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		smtpCfg.User, toList, encodedSubject, emailBody)
 
-	if err := sendMailWithTimeout(addr, smtpCfg, []byte(msg)); err != nil {
+	var bodyBuf strings.Builder
+	bodyBuf.Grow(len(cfg.Name) + len(body) + len(serverTime) + len(beijingTime) + 40)
+	bodyBuf.WriteString("服务器: ")
+	bodyBuf.WriteString(cfg.Name)
+	bodyBuf.WriteByte('\n')
+	bodyBuf.WriteString(body)
+	bodyBuf.WriteString("\n服务器时间: ")
+	bodyBuf.WriteString(serverTime)
+	bodyBuf.WriteString("\n北京时间: ")
+	bodyBuf.WriteString(beijingTime)
+	emailBody := bodyBuf.String()
+
+	var subjBuf strings.Builder
+	subjBuf.Grow(len("[监控报警][") + len(cfg.Name) + len("] ") + len(subject))
+	subjBuf.WriteString("[监控报警][")
+	subjBuf.WriteString(cfg.Name)
+	subjBuf.WriteString("] ")
+	subjBuf.WriteString(subject)
+	encodedSubject := base64.StdEncoding.EncodeToString([]byte(subjBuf.String()))
+
+	var msgBuf strings.Builder
+	msgBuf.Grow(len(smtpCfg.User) + len(toList) + len(encodedSubject) + len(emailBody) + 96)
+	msgBuf.WriteString("From: ")
+	msgBuf.WriteString(smtpCfg.User)
+	msgBuf.WriteString("\r\nTo: ")
+	msgBuf.WriteString(toList)
+	msgBuf.WriteString("\r\nSubject: =?UTF-8?B?")
+	msgBuf.WriteString(encodedSubject)
+	msgBuf.WriteString("?=\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n")
+	msgBuf.WriteString(emailBody)
+
+	if err := sendMailWithTimeout(addr, smtpCfg, []byte(msgBuf.String())); err != nil {
 		log.Printf("报警邮件发送失败 [%s]: %v", subject, err)
 	} else {
 		log.Printf("报警邮件已发送 [%s]: %s", subject, body)
