@@ -162,6 +162,17 @@ func initNftablesCountersNetlink() error {
 		},
 	})
 
+	// IPv4 WAN ingress (catch-all for IPv4)
+	conn.AddRule(&nftables.Rule{
+		Table: tbl,
+		Chain: prerouting,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x02}},
+			&expr.Objref{Type: 1, Name: "wan_ingress"},
+		},
+	})
+
 	// IPv6 LAN ingress
 	conn.AddRule(&nftables.Rule{
 		Table: tbl,
@@ -185,11 +196,13 @@ func initNftablesCountersNetlink() error {
 		},
 	})
 
-	// WAN ingress (catch-all)
+	// IPv6 WAN ingress (catch-all for IPv6)
 	conn.AddRule(&nftables.Rule{
 		Table: tbl,
 		Chain: prerouting,
 		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x0A}},
 			&expr.Objref{Type: 1, Name: "wan_ingress"},
 		},
 	})
@@ -219,6 +232,17 @@ func initNftablesCountersNetlink() error {
 		},
 	})
 
+	// IPv4 WAN egress (catch-all for IPv4)
+	conn.AddRule(&nftables.Rule{
+		Table: tbl,
+		Chain: postrouting,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x02}},
+			&expr.Objref{Type: 1, Name: "wan_egress"},
+		},
+	})
+
 	// IPv6 LAN egress
 	conn.AddRule(&nftables.Rule{
 		Table: tbl,
@@ -242,11 +266,13 @@ func initNftablesCountersNetlink() error {
 		},
 	})
 
-	// WAN egress (catch-all)
+	// IPv6 WAN egress (catch-all for IPv6)
 	conn.AddRule(&nftables.Rule{
 		Table: tbl,
 		Chain: postrouting,
 		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x0A}},
 			&expr.Objref{Type: 1, Name: "wan_egress"},
 		},
 	})
