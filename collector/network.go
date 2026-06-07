@@ -49,6 +49,7 @@ var (
 	physicalNICRefreshD = 5 * time.Minute
 
 	classifier       classifierBackend
+	classifierMu     sync.RWMutex
 	lanWanMu         sync.Mutex
 	lastLanIngress   int64
 	lastLanEgress    int64
@@ -94,6 +95,9 @@ func InitNetwork() {
 }
 
 func EnableLanWanSplit() error {
+	classifierMu.Lock()
+	defer classifierMu.Unlock()
+
 	if classifier != classifierNone {
 		return nil
 	}
@@ -112,6 +116,9 @@ func EnableLanWanSplit() error {
 }
 
 func DisableLanWanSplit() {
+	classifierMu.Lock()
+	defer classifierMu.Unlock()
+
 	switch classifier {
 	case classifierNftables:
 		cleanupNftablesCounters()
@@ -517,35 +524,48 @@ func CollectNetwork() (*Network, error) {
 		var lanRcv, lanSnd, wanRcv, wanSnd int64
 		var readErr error
 
-		switch classifier {
+		classifierMu.RLock()
+		cl := classifier
+		classifierMu.RUnlock()
+
+		switch cl {
 		case classifierNftables:
 			lanRcv, lanSnd, wanRcv, wanSnd, readErr = readNftablesCounters()
 		case classifierIptables:
 			lanRcv, lanSnd, wanRcv, wanSnd, readErr = readIptablesCounters()
 		}
 
-		if readErr == nil && (classifier == classifierNftables || classifier == classifierIptables) {
+		if readErr == nil && (cl == classifierNftables || cl == classifierIptables) {
 			lanWanMu.Lock()
 
-			if lastLanIngress > 0 && lanRcv >= lastLanIngress {
-				delta := lanRcv - lastLanIngress
-				totalLanDownload += delta
-				n.LanDownload = int64(float64(delta) / elapsed)
-			}
-			if lastLanEgress > 0 && lanSnd >= lastLanEgress {
-				delta := lanSnd - lastLanEgress
-				totalLanUpload += delta
-				n.LanUpload = int64(float64(delta) / elapsed)
-			}
-			if lastWanIngress > 0 && wanRcv >= lastWanIngress {
-				delta := wanRcv - lastWanIngress
-				totalWanDownload += delta
-				n.WanDownload = int64(float64(delta) / elapsed)
-			}
-			if lastWanEgress > 0 && wanSnd >= lastWanEgress {
-				delta := wanSnd - lastWanEgress
-				totalWanUpload += delta
-				n.WanUpload = int64(float64(delta) / elapsed)
+			lanWanRegressed := (lastLanIngress > 0 && lanRcv < lastLanIngress) ||
+				(lastLanEgress > 0 && lanSnd < lastLanEgress) ||
+				(lastWanIngress > 0 && wanRcv < lastWanIngress) ||
+				(lastWanEgress > 0 && wanSnd < lastWanEgress)
+
+			if lanWanRegressed {
+				log.Println("LAN/WAN 计数器回退，跳过本轮速率计算")
+			} else {
+				if lastLanIngress > 0 && lanRcv >= lastLanIngress {
+					delta := lanRcv - lastLanIngress
+					totalLanDownload += delta
+					n.LanDownload = int64(float64(delta) / elapsed)
+				}
+				if lastLanEgress > 0 && lanSnd >= lastLanEgress {
+					delta := lanSnd - lastLanEgress
+					totalLanUpload += delta
+					n.LanUpload = int64(float64(delta) / elapsed)
+				}
+				if lastWanIngress > 0 && wanRcv >= lastWanIngress {
+					delta := wanRcv - lastWanIngress
+					totalWanDownload += delta
+					n.WanDownload = int64(float64(delta) / elapsed)
+				}
+				if lastWanEgress > 0 && wanSnd >= lastWanEgress {
+					delta := wanSnd - lastWanEgress
+					totalWanUpload += delta
+					n.WanUpload = int64(float64(delta) / elapsed)
+				}
 			}
 
 			lastLanIngress = lanRcv

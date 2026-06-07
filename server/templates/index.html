@@ -554,10 +554,10 @@
                         document.getElementById('diskReadUnit').textContent = diskUnitText;
                         document.getElementById('diskWriteUnit').textContent = diskUnitText;
                     }
+                }
 
                 if (data.self_mem) {
                     document.getElementById('selfMem').textContent = formatBytes(data.self_mem.rss * 1024);
-                }
                 }
             } catch(e) { console.error(e); }
         }
@@ -597,7 +597,7 @@
         loadServerName();
         loadMetrics();
         loadHistory();
-        var metricsInterval = setInterval(loadMetrics, 3000);
+        var metricsInterval = setInterval(loadMetrics, (window._monitorInterval || 3) * 1000);
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
                 clearInterval(metricsInterval);

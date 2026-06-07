@@ -432,8 +432,9 @@
                 {value: 1, label: 'B'}
             ];
             for (var i = 0; i < units.length; i++) {
-                if (bytes >= units[i].value && bytes % units[i].value === 0) {
-                    return {value: bytes / units[i].value, unit: units[i].value};
+                if (bytes >= units[i].value) {
+                    var val = bytes / units[i].value;
+                    return {value: val % 1 === 0 ? val : parseFloat(val.toFixed(2)), unit: units[i].value};
                 }
             }
             return {value: bytes, unit: 1};

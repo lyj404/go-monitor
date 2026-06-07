@@ -71,11 +71,13 @@ func NewDB(path string) (*DB, error) {
 	db.SetConnMaxLifetime(time.Hour)
 
 	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	s := &DB{db: db}
 	if err := s.init(); err != nil {
+		db.Close()
 		return nil, err
 	}
 

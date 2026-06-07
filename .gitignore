@@ -3,3 +3,5 @@ data/
 config.yaml
 *.exe
 .opencode/
+.claude/
+graphify-out/

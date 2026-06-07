@@ -3,6 +3,7 @@ package collector
 import (
 	"encoding/json"
 	"go-monitor/config"
+	"log"
 	"sync"
 	"time"
 )
@@ -177,7 +178,10 @@ func (c *Collector) collect() {
 
 	// Pre-marshal so /api/metrics can just write bytes — no per-request
 	// allocation, no extra lock acquisition on the hot read path.
-	data, _ := json.Marshal(m)
+	data, err := json.Marshal(m)
+	if err != nil {
+		log.Println("指标序列化失败:", err)
+	}
 
 	c.mu.Lock()
 	c.metrics = m
