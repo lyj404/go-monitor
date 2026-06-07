@@ -9,13 +9,18 @@ import (
 )
 
 type Metrics struct {
-	Interval int      `json:"interval"`
-	Memory   *Memory  `json:"memory,omitempty"`
-	CPU      *CPU     `json:"cpu,omitempty"`
-	Network  *Network `json:"network,omitempty"`
-	Disk     *Disk    `json:"disk,omitempty"`
-	DiskIO   *DiskIO  `json:"disk_io,omitempty"`
-	SelfMem  *SelfMem `json:"self_mem,omitempty"`
+	Interval int       `json:"interval"`
+	Memory   *Memory   `json:"memory,omitempty"`
+	CPU      *CPU      `json:"cpu,omitempty"`
+	Network  *Network  `json:"network,omitempty"`
+	Disk     *Disk     `json:"disk,omitempty"`
+	DiskIO   *DiskIO   `json:"disk_io,omitempty"`
+	SelfMem  *SelfMem  `json:"self_mem,omitempty"`
+	LoadAvg  *LoadAvg  `json:"loadavg,omitempty"`
+	Process  *Process  `json:"process,omitempty"`
+	Uptime   *Uptime   `json:"uptime,omitempty"`
+	TCPStat  *TCPStat  `json:"tcpstat,omitempty"`
+	CPUTemp  *CPUTemp  `json:"cpu_temp,omitempty"`
 }
 
 type Alerter interface {
@@ -174,6 +179,56 @@ func (c *Collector) collect() {
 		}
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if la, err := CollectLoadAvg(); err == nil {
+			mu.Lock()
+			m.LoadAvg = la
+			mu.Unlock()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if p, err := CollectProcess(); err == nil {
+			mu.Lock()
+			m.Process = p
+			mu.Unlock()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if u, err := CollectUptime(); err == nil {
+			mu.Lock()
+			m.Uptime = u
+			mu.Unlock()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if ts, err := CollectTCPStat(); err == nil {
+			mu.Lock()
+			m.TCPStat = ts
+			mu.Unlock()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if t, err := CollectCPUTemp(); err == nil {
+			mu.Lock()
+			m.CPUTemp = t
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
 
 	// Pre-marshal so /api/metrics can just write bytes — no per-request
@@ -191,6 +246,8 @@ func (c *Collector) collect() {
 	if c.alerter != nil {
 		c.alerter.CheckWithConfig(m, enabled)
 	}
+
+	AccumulateMetrics(m)
 }
 
 func (c *Collector) GetMetrics() Metrics {
@@ -211,4 +268,75 @@ func (c *Collector) UpdateSnapshot() {
 	c.snapshotMu.Lock()
 	c.snapshot = c.cfg.Snapshot()
 	c.snapshotMu.Unlock()
+}
+
+// Hourly metrics accumulator for daily_metrics persistence.
+var (
+	hourlyMu       sync.Mutex
+	hourlyCPUSum   float64
+	hourlyCPUMax   float64
+	hourlyMemSum   float64
+	hourlyMemMax   float64
+	hourlyDiskSum  float64
+	hourlyDiskMax  float64
+	hourlySamples  int
+)
+
+// AccumulateMetrics adds the current metrics snapshot to the hourly accumulator.
+func AccumulateMetrics(m Metrics) {
+	hourlyMu.Lock()
+	defer hourlyMu.Unlock()
+
+	if m.CPU != nil {
+		hourlyCPUSum += m.CPU.Usage
+		if m.CPU.Usage > hourlyCPUMax {
+			hourlyCPUMax = m.CPU.Usage
+		}
+	}
+	if m.Memory != nil {
+		hourlyMemSum += m.Memory.Usage
+		if m.Memory.Usage > hourlyMemMax {
+			hourlyMemMax = m.Memory.Usage
+		}
+	}
+	if m.Disk != nil {
+		hourlyDiskSum += m.Disk.Usage
+		if m.Disk.Usage > hourlyDiskMax {
+			hourlyDiskMax = m.Disk.Usage
+		}
+	}
+	hourlySamples++
+}
+
+// HourlyMetrics holds the aggregated metrics for one hour.
+type HourlyMetrics struct {
+	AvgCPU, MaxCPU     float64
+	AvgMemory, MaxMemory float64
+	AvgDisk, MaxDisk   float64
+	SampleCount        int
+}
+
+// GetHourlyMetricsAndReset returns the accumulated hourly metrics and resets
+// the accumulators. Called by the store's hourly task.
+func GetHourlyMetricsAndReset() HourlyMetrics {
+	hourlyMu.Lock()
+	defer hourlyMu.Unlock()
+
+	var hm HourlyMetrics
+	if hourlySamples > 0 {
+		hm.AvgCPU = hourlyCPUSum / float64(hourlySamples)
+		hm.MaxCPU = hourlyCPUMax
+		hm.AvgMemory = hourlyMemSum / float64(hourlySamples)
+		hm.MaxMemory = hourlyMemMax
+		hm.AvgDisk = hourlyDiskSum / float64(hourlySamples)
+		hm.MaxDisk = hourlyDiskMax
+		hm.SampleCount = hourlySamples
+	}
+
+	hourlyCPUSum, hourlyCPUMax = 0, 0
+	hourlyMemSum, hourlyMemMax = 0, 0
+	hourlyDiskSum, hourlyDiskMax = 0, 0
+	hourlySamples = 0
+
+	return hm
 }

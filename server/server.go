@@ -411,6 +411,46 @@ func (s *Server) historyMonthlyHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(monthlies)
 }
 
+func (s *Server) alertHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.db == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	limit := parsePositiveLimit(r.URL.Query().Get("limit"), 50)
+	alerts, err := s.db.GetAlertHistory(limit)
+	if err != nil {
+		log.Println("查询告警历史失败:", err)
+		writeJSONError(w, http.StatusInternalServerError, "query alert history failed")
+		return
+	}
+	json.NewEncoder(w).Encode(alerts)
+}
+
+func (s *Server) metricsHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.db == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	startDate := r.URL.Query().Get("start")
+	endDate := r.URL.Query().Get("end")
+	limit := parsePositiveLimit(r.URL.Query().Get("limit"), 30)
+	if startDate == "" {
+		startDate = "1970-01-01"
+	}
+	if endDate == "" {
+		endDate = "2099-12-31"
+	}
+	metrics, err := s.db.GetDailyMetrics(startDate, endDate, limit)
+	if err != nil {
+		log.Println("查询指标历史失败:", err)
+		writeJSONError(w, http.StatusInternalServerError, "query metrics history failed")
+		return
+	}
+	json.NewEncoder(w).Encode(metrics)
+}
+
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

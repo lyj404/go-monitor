@@ -58,6 +58,11 @@ type MonitorConfig struct {
 	LanWanSplit bool `yaml:"lan_wan_split"`
 	DiskRoot    bool `yaml:"disk_root"`
 	DiskIO      bool `yaml:"disk_io"`
+	LoadAvg     bool `yaml:"loadavg"`
+	Process     bool `yaml:"process"`
+	Uptime      bool `yaml:"uptime"`
+	TCPStat     bool `yaml:"tcpstat"`
+	CPUTemp     bool `yaml:"cpu_temp"`
 }
 
 type SMTPConfig struct {
@@ -88,6 +93,14 @@ type AlertConfig struct {
 	Interval               int     `yaml:"interval"`
 	RetentionDays          int     `yaml:"retention_days"`
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
+	LoadAvg                bool    `yaml:"loadavg"`
+	LoadAvgThreshold       float64 `yaml:"loadavg_threshold"`
+	Process                bool    `yaml:"process"`
+	ProcessThreshold       int     `yaml:"process_threshold"`
+	CPUTemp                bool    `yaml:"cpu_temp"`
+	CPUTempThreshold       float64 `yaml:"cpu_temp_threshold"`
+	CloseWait              bool    `yaml:"close_wait"`
+	CloseWaitThreshold     int     `yaml:"close_wait_threshold"`
 }
 
 // FromSnapshot builds a Config from a value-typed Snapshot. Intended for
@@ -133,6 +146,13 @@ func Load(path string) (*Config, error) {
 		snap.Alert.MonthlyRetentionMonths = 12
 	}
 
+	// New collectors default to enabled (new fields, absent from existing configs).
+	snap.Monitor.LoadAvg = true
+	snap.Monitor.Process = true
+	snap.Monitor.Uptime = true
+	snap.Monitor.TCPStat = true
+	snap.Monitor.CPUTemp = true
+
 	if err := validate(&snap); err != nil {
 		return nil, err
 	}
@@ -166,6 +186,11 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"lan_wan_split": c.data.Monitor.LanWanSplit,
 			"disk_root":     c.data.Monitor.DiskRoot,
 			"disk_io":       c.data.Monitor.DiskIO,
+			"loadavg":       c.data.Monitor.LoadAvg,
+			"process":       c.data.Monitor.Process,
+			"uptime":        c.data.Monitor.Uptime,
+			"tcpstat":       c.data.Monitor.TCPStat,
+			"cpu_temp":      c.data.Monitor.CPUTemp,
 		},
 		"smtp": map[string]interface{}{
 			"host": c.data.SMTP.Host,
@@ -194,6 +219,14 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"duration":                 c.data.Alert.Duration,
 			"retention_days":           c.data.Alert.RetentionDays,
 			"monthly_retention_months": c.data.Alert.MonthlyRetentionMonths,
+			"loadavg":                  c.data.Alert.LoadAvg,
+			"loadavg_threshold":        c.data.Alert.LoadAvgThreshold,
+			"process":                  c.data.Alert.Process,
+			"process_threshold":        c.data.Alert.ProcessThreshold,
+			"cpu_temp":                 c.data.Alert.CPUTemp,
+			"cpu_temp_threshold":       c.data.Alert.CPUTempThreshold,
+			"close_wait":               c.data.Alert.CloseWait,
+			"close_wait_threshold":     c.data.Alert.CloseWaitThreshold,
 		},
 	}
 }
@@ -295,6 +328,21 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		if v, ok := mon["disk_io"].(bool); ok {
 			c.Monitor.DiskIO = v
 		}
+		if v, ok := mon["loadavg"].(bool); ok {
+			c.Monitor.LoadAvg = v
+		}
+		if v, ok := mon["process"].(bool); ok {
+			c.Monitor.Process = v
+		}
+		if v, ok := mon["uptime"].(bool); ok {
+			c.Monitor.Uptime = v
+		}
+		if v, ok := mon["tcpstat"].(bool); ok {
+			c.Monitor.TCPStat = v
+		}
+		if v, ok := mon["cpu_temp"].(bool); ok {
+			c.Monitor.CPUTemp = v
+		}
 	}
 
 	if smtp, ok := updated["smtp"].(map[string]interface{}); ok {
@@ -380,6 +428,30 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		}
 		if v, ok := alert["monthly_retention_months"].(float64); ok && v > 0 {
 			c.Alert.MonthlyRetentionMonths = int(v)
+		}
+		if v, ok := alert["loadavg"].(bool); ok {
+			c.Alert.LoadAvg = v
+		}
+		if v, ok := alert["loadavg_threshold"].(float64); ok {
+			c.Alert.LoadAvgThreshold = v
+		}
+		if v, ok := alert["process"].(bool); ok {
+			c.Alert.Process = v
+		}
+		if v, ok := alert["process_threshold"].(float64); ok {
+			c.Alert.ProcessThreshold = int(v)
+		}
+		if v, ok := alert["cpu_temp"].(bool); ok {
+			c.Alert.CPUTemp = v
+		}
+		if v, ok := alert["cpu_temp_threshold"].(float64); ok {
+			c.Alert.CPUTempThreshold = v
+		}
+		if v, ok := alert["close_wait"].(bool); ok {
+			c.Alert.CloseWait = v
+		}
+		if v, ok := alert["close_wait_threshold"].(float64); ok {
+			c.Alert.CloseWaitThreshold = int(v)
 		}
 	}
 }

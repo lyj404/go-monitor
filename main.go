@@ -61,6 +61,15 @@ func main() {
 		log.Println("数据库初始化失败:", err)
 	}
 
+	// Wire alert history persistence
+	if al != nil && db != nil {
+		al.SetOnAlert(func(alertType, message, currentValue, threshold string) {
+			if err := db.SaveAlert(alertType, message, currentValue, threshold); err != nil {
+				log.Println("保存告警历史失败:", err)
+			}
+		})
+	}
+
 	svr := server.NewServer(cfg, col, db)
 	handler := svr.Routes()
 

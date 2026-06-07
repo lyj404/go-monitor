@@ -43,6 +43,10 @@ type Alerter struct {
 	stopCh   chan struct{}
 	closed   bool
 	wg       sync.WaitGroup
+
+	// onAlert is called (if non-nil) every time an alert fires.
+	// Parameters: alertType, message, currentValue, threshold.
+	onAlert func(alertType, message, currentValue, threshold string)
 }
 
 func New() *Alerter {
@@ -57,6 +61,18 @@ func New() *Alerter {
 		go a.worker()
 	}
 	return a
+}
+
+// SetOnAlert registers a callback that fires alongside each alert email.
+// The callback receives (alertType, message, currentValue, threshold).
+func (a *Alerter) SetOnAlert(fn func(alertType, message, currentValue, threshold string)) {
+	a.onAlert = fn
+}
+
+func (a *Alerter) notifyAlert(alertType, message, currentValue, threshold string) {
+	if a.onAlert != nil {
+		a.onAlert(alertType, message, currentValue, threshold)
+	}
 }
 
 func (a *Alerter) Close() {
@@ -89,18 +105,21 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	if cfg.Alert.CPU && m.CPU != nil {
 		if a.shouldFire("cpu", m.CPU.Usage >= cfg.Alert.CPUThreshold, duration) {
 			a.send("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), cfg)
+			a.notifyAlert("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), fmt.Sprintf("%.1f%%", m.CPU.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.CPUThreshold))
 		}
 	}
 
 	if cfg.Alert.Memory && m.Memory != nil {
 		if a.shouldFire("memory", m.Memory.Usage >= cfg.Alert.MemoryThreshold, duration) {
 			a.send("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), cfg)
+			a.notifyAlert("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), fmt.Sprintf("%.1f%%", m.Memory.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.MemoryThreshold))
 		}
 	}
 
 	if cfg.Alert.Disk && m.Disk != nil {
 		if a.shouldFire("disk", m.Disk.Usage >= cfg.Alert.DiskThreshold, duration) {
 			a.send("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), cfg)
+			a.notifyAlert("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), fmt.Sprintf("%.1f%%", m.Disk.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.DiskThreshold))
 		}
 	}
 
@@ -108,11 +127,13 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		if cfg.Alert.NetworkUp {
 			if a.shouldFire("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold, duration) {
 				a.send("网络上传", fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), cfg)
+				a.notifyAlert("网络上传", fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s")
 			}
 		}
 		if cfg.Alert.NetworkDown {
 			if a.shouldFire("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold, duration) {
 				a.send("网络下载", fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), cfg)
+				a.notifyAlert("网络下载", fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s")
 			}
 		}
 	}
@@ -121,12 +142,42 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		if cfg.Alert.DiskRead {
 			if a.shouldFire("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold, duration) {
 				a.send("磁盘读取", fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), cfg)
+				a.notifyAlert("磁盘读取", fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s")
 			}
 		}
 		if cfg.Alert.DiskWrite {
 			if a.shouldFire("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold, duration) {
 				a.send("磁盘写入", fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), cfg)
+				a.notifyAlert("磁盘写入", fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s")
 			}
+		}
+	}
+
+	if cfg.Alert.LoadAvg && m.LoadAvg != nil {
+		if a.shouldFire("loadavg", m.LoadAvg.Load1 >= cfg.Alert.LoadAvgThreshold, duration) {
+			a.send("系统负载", fmt.Sprintf("1分钟负载 %.2f 超过阈值 %.2f", m.LoadAvg.Load1, cfg.Alert.LoadAvgThreshold), cfg)
+			a.notifyAlert("系统负载", fmt.Sprintf("1分钟负载 %.2f 超过阈值 %.2f", m.LoadAvg.Load1, cfg.Alert.LoadAvgThreshold), fmt.Sprintf("%.2f", m.LoadAvg.Load1), fmt.Sprintf("%.2f", cfg.Alert.LoadAvgThreshold))
+		}
+	}
+
+	if cfg.Alert.Process && m.Process != nil {
+		if a.shouldFire("process", m.Process.Count >= cfg.Alert.ProcessThreshold, duration) {
+			a.send("进程数", fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold), cfg)
+			a.notifyAlert("进程数", fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold), fmt.Sprintf("%d", m.Process.Count), fmt.Sprintf("%d", cfg.Alert.ProcessThreshold))
+		}
+	}
+
+	if cfg.Alert.CPUTemp && m.CPUTemp != nil {
+		if a.shouldFire("cpu_temp", m.CPUTemp.Temp >= cfg.Alert.CPUTempThreshold, duration) {
+			a.send("CPU温度", fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold), cfg)
+			a.notifyAlert("CPU温度", fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold), fmt.Sprintf("%.1f°C", m.CPUTemp.Temp), fmt.Sprintf("%.1f°C", cfg.Alert.CPUTempThreshold))
+		}
+	}
+
+	if cfg.Alert.CloseWait && m.TCPStat != nil {
+		if a.shouldFire("close_wait", m.TCPStat.CloseWait >= cfg.Alert.CloseWaitThreshold, duration) {
+			a.send("TCP CLOSE_WAIT", fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold), cfg)
+			a.notifyAlert("TCP CLOSE_WAIT", fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold), fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold))
 		}
 	}
 }

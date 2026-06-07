@@ -182,6 +182,16 @@
         .card-icon.disk-write svg { stroke: #fb923c; }
         .card-icon.self-mem { background: rgba(96, 165, 250, 0.15); }
         .card-icon.self-mem svg { stroke: #60a5fa; }
+        .card-icon.loadavg { background: rgba(244, 114, 182, 0.15); }
+        .card-icon.loadavg svg { stroke: #f472b6; }
+        .card-icon.process { background: rgba(45, 212, 191, 0.15); }
+        .card-icon.process svg { stroke: #2dd4bf; }
+        .card-icon.uptime { background: rgba(129, 140, 248, 0.15); }
+        .card-icon.uptime svg { stroke: #818cf8; }
+        .card-icon.tcp { background: rgba(251, 146, 60, 0.15); }
+        .card-icon.tcp svg { stroke: #fb923c; }
+        .card-icon.temp { background: rgba(239, 68, 68, 0.15); }
+        .card-icon.temp svg { stroke: #ef4444; }
         
         .card .value {
             font-family: "SF Mono", "Fira Code", "Roboto Mono", monospace;
@@ -435,6 +445,76 @@
                 <div class="value" id="diskWrite">--</div>
                 <div class="detail" id="diskWriteUnit">字节/3秒</div>
             </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">系统负载</span>
+                    <div class="card-icon loadavg">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="loadAvg1">--</div>
+                <div class="detail" id="loadAvgDetail">1 / 5 / 15 分钟</div>
+                <div class="progress"><div class="progress-bar" id="loadAvgBar" style="width:0%"></div></div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">进程数</span>
+                    <div class="card-icon process">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="2" width="8" height="8" rx="1"/>
+                            <rect x="14" y="2" width="8" height="8" rx="1"/>
+                            <rect x="2" y="14" width="8" height="8" rx="1"/>
+                            <rect x="14" y="14" width="8" height="8" rx="1"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="processCount">--</div>
+                <div class="detail">运行中进程</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">运行时间</span>
+                    <div class="card-icon uptime">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="uptime">--</div>
+                <div class="detail">系统已运行</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">TCP 连接</span>
+                    <div class="card-icon tcp">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="tcpEstablished">--</div>
+                <div class="detail" id="tcpDetail">ESTABLISHED</div>
+            </div>
+
+            <div class="card" id="cpuTempCard" style="display:none">
+                <div class="card-header">
+                    <span class="card-title">CPU 温度</span>
+                    <div class="card-icon temp">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="value" id="cpuTemp">--</div>
+                <div class="detail">CPU 温度</div>
+            </div>
         </div>
         
         <div class="history-section">
@@ -465,6 +545,34 @@
             <table>
                 <thead><tr><th>月份</th><th>上传</th><th>下载</th></tr></thead>
                 <tbody id="monthlyTable"><tr><td colspan="3" class="empty-state">暂无数据</td></tr></tbody>
+            </table>
+        </div>
+
+        <div class="history-section">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                告警历史
+            </h2>
+            <table>
+                <thead><tr><th>时间</th><th>类型</th><th>详情</th></tr></thead>
+                <tbody id="alertTable"><tr><td colspan="3" class="empty-state">暂无告警</td></tr></tbody>
+            </table>
+        </div>
+
+        <div class="history-section">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                每日指标趋势
+            </h2>
+            <table>
+                <thead><tr><th>日期</th><th>CPU (均/峰)</th><th>内存 (均/峰)</th><th>磁盘 (均/峰)</th><th>采样</th></tr></thead>
+                <tbody id="metricsTable"><tr><td colspan="5" class="empty-state">暂无数据</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -559,6 +667,49 @@
                 if (data.self_mem) {
                     document.getElementById('selfMem').textContent = formatBytes(data.self_mem.rss * 1024);
                 }
+
+                if (data.loadavg) {
+                    var cores = data.loadavg.cores || 1;
+                    var loadPct = (data.loadavg.load1 / cores * 100);
+                    document.getElementById('loadAvg1').textContent = loadPct.toFixed(0) + '%';
+                    document.getElementById('loadAvgDetail').textContent =
+                        data.loadavg.load1.toFixed(2) + ' / ' + data.loadavg.load5.toFixed(2) + ' / ' + data.loadavg.load15.toFixed(2) +
+                        ' (' + cores + '核)';
+                    var bar = document.getElementById('loadAvgBar');
+                    bar.style.width = Math.min(loadPct, 100) + '%';
+                    bar.className = 'progress-bar ' + getProgressColor(loadPct);
+                }
+
+                if (data.process) {
+                    document.getElementById('processCount').textContent = data.process.count;
+                }
+
+                if (data.uptime) {
+                    var sec = Math.floor(data.uptime.seconds);
+                    var days = Math.floor(sec / 86400);
+                    var hours = Math.floor((sec % 86400) / 3600);
+                    var mins = Math.floor((sec % 3600) / 60);
+                    var parts = [];
+                    if (days > 0) parts.push(days + '天');
+                    if (hours > 0) parts.push(hours + '时');
+                    parts.push(mins + '分');
+                    document.getElementById('uptime').textContent = parts.join(' ');
+                }
+
+                if (data.tcpstat) {
+                    document.getElementById('tcpEstablished').textContent = data.tcpstat.established;
+                    document.getElementById('tcpDetail').textContent =
+                        'ESTABLISHED · TIME_WAIT ' + data.tcpstat.time_wait +
+                        ' · CLOSE_WAIT ' + data.tcpstat.close_wait +
+                        ' · LISTEN ' + data.tcpstat.listen;
+                }
+
+                if (data.cpu_temp) {
+                    document.getElementById('cpuTempCard').style.display = '';
+                    document.getElementById('cpuTemp').textContent = data.cpu_temp.temp.toFixed(1) + '°C';
+                } else {
+                    document.getElementById('cpuTempCard').style.display = 'none';
+                }
             } catch(e) { console.error(e); }
         }
         
@@ -568,7 +719,7 @@
                     fetch('/api/history/daily').then(r => r.json()),
                     fetch('/api/history/monthly').then(r => r.json())
                 ]);
-                
+
                 function netCell(upload, download, lanUp, lanDown, wanUp, wanDown) {
                     var hasSplit = (lanUp !== undefined && lanUp !== null);
                     var uploadStr = formatBytes(upload);
@@ -585,7 +736,7 @@
                         return '<tr><td>'+d.date+'</td>' + netCell(d.upload, d.download, d.lan_upload, d.lan_download, d.wan_upload, d.wan_download) + '</tr>';
                     }).join('');
                 }
-                
+
                 if (monthly.length > 0) {
                     document.getElementById('monthlyTable').innerHTML = monthly.map(function(m) {
                         return '<tr><td>'+m.year_month+'</td>' + netCell(m.upload, m.download, m.lan_upload, m.lan_download, m.wan_upload, m.wan_download) + '</tr>';
@@ -593,10 +744,57 @@
                 }
             } catch(e) { console.error(e); }
         }
-        
+
+        async function loadAlertHistory() {
+            try {
+                const resp = await fetch('/api/history/alerts?limit=20');
+                const alerts = await resp.json();
+                if (alerts && alerts.length > 0) {
+                    document.getElementById('alertTable').innerHTML = alerts.map(function(a) {
+                        var d = new Date(a.created_at * 1000);
+                        var time = d.getFullYear() + '-' +
+                            String(d.getMonth()+1).padStart(2,'0') + '-' +
+                            String(d.getDate()).padStart(2,'0') + ' ' +
+                            String(d.getHours()).padStart(2,'0') + ':' +
+                            String(d.getMinutes()).padStart(2,'0');
+                        return '<tr><td>'+time+'</td><td>'+a.alert_type+'</td><td>'+a.message+'</td></tr>';
+                    }).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function loadMetricsHistory() {
+            try {
+                const resp = await fetch('/api/history/metrics?limit=30');
+                const metrics = await resp.json();
+                if (metrics && metrics.length > 0) {
+                    document.getElementById('metricsTable').innerHTML = metrics.map(function(m) {
+                        return '<tr>' +
+                            '<td>'+m.date+'</td>' +
+                            '<td>'+m.avg_cpu.toFixed(1)+'% / '+m.max_cpu.toFixed(1)+'%</td>' +
+                            '<td>'+m.avg_memory.toFixed(1)+'% / '+m.max_memory.toFixed(1)+'%</td>' +
+                            '<td>'+m.avg_disk.toFixed(1)+'% / '+m.max_disk.toFixed(1)+'%</td>' +
+                            '<td>'+m.sample_count+'</td>' +
+                            '</tr>';
+                    }).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function formatTime(ts) {
+            var d = new Date(ts * 1000);
+            return d.getFullYear() + '-' +
+                String(d.getMonth()+1).padStart(2,'0') + '-' +
+                String(d.getDate()).padStart(2,'0') + ' ' +
+                String(d.getHours()).padStart(2,'0') + ':' +
+                String(d.getMinutes()).padStart(2,'0');
+        }
+
         loadServerName();
         loadMetrics();
         loadHistory();
+        loadAlertHistory();
+        loadMetricsHistory();
         var metricsInterval = setInterval(loadMetrics, (window._monitorInterval || 3) * 1000);
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {

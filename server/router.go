@@ -16,6 +16,8 @@ func (s *Server) Routes() http.Handler {
 	protected.HandleFunc("/api/metrics", s.metricsHandler)
 	protected.HandleFunc("/api/history/daily", s.historyDailyHandler)
 	protected.HandleFunc("/api/history/monthly", s.historyMonthlyHandler)
+	protected.HandleFunc("/api/history/alerts", s.alertHistoryHandler)
+	protected.HandleFunc("/api/history/metrics", s.metricsHistoryHandler)
 	protected.HandleFunc("/api/config", s.configAPIHandler)
 	protected.HandleFunc("/settings", s.configPageHandler)
 	protected.HandleFunc("/", s.indexHandler)
