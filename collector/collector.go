@@ -16,7 +16,6 @@ type Metrics struct {
 	Disk     *Disk     `json:"disk,omitempty"`
 	DiskIO   *DiskIO   `json:"disk_io,omitempty"`
 	SelfMem  *SelfMem  `json:"self_mem,omitempty"`
-	LoadAvg  *LoadAvg  `json:"loadavg,omitempty"`
 	Process  *Process  `json:"process,omitempty"`
 	Uptime   *Uptime   `json:"uptime,omitempty"`
 	TCPStat  *TCPStat  `json:"tcpstat,omitempty"`
@@ -175,16 +174,6 @@ func (c *Collector) collect() {
 		if selfMem, err := CollectSelfMem(); err == nil {
 			mu.Lock()
 			m.SelfMem = selfMem
-			mu.Unlock()
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if la, err := CollectLoadAvg(); err == nil {
-			mu.Lock()
-			m.LoadAvg = la
 			mu.Unlock()
 		}
 	}()

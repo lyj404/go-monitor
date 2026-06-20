@@ -153,13 +153,6 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		}
 	}
 
-	if cfg.Alert.LoadAvg && m.LoadAvg != nil {
-		if a.shouldFire("loadavg", m.LoadAvg.Load1 >= cfg.Alert.LoadAvgThreshold, duration) {
-			a.send("系统负载", fmt.Sprintf("1分钟负载 %.2f 超过阈值 %.2f", m.LoadAvg.Load1, cfg.Alert.LoadAvgThreshold), cfg)
-			a.notifyAlert("系统负载", fmt.Sprintf("1分钟负载 %.2f 超过阈值 %.2f", m.LoadAvg.Load1, cfg.Alert.LoadAvgThreshold), fmt.Sprintf("%.2f", m.LoadAvg.Load1), fmt.Sprintf("%.2f", cfg.Alert.LoadAvgThreshold))
-		}
-	}
-
 	if cfg.Alert.Process && m.Process != nil {
 		if a.shouldFire("process", m.Process.Count >= cfg.Alert.ProcessThreshold, duration) {
 			a.send("进程数", fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold), cfg)

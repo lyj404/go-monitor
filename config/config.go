@@ -58,7 +58,6 @@ type MonitorConfig struct {
 	LanWanSplit bool `yaml:"lan_wan_split"`
 	DiskRoot    bool `yaml:"disk_root"`
 	DiskIO      bool `yaml:"disk_io"`
-	LoadAvg     bool `yaml:"loadavg"`
 	Process     bool `yaml:"process"`
 	Uptime      bool `yaml:"uptime"`
 	TCPStat     bool `yaml:"tcpstat"`
@@ -95,8 +94,6 @@ type AlertConfig struct {
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
 	AlertRetentionDays     int     `yaml:"alert_retention_days"`
 	MetricsRetentionDays   int     `yaml:"metrics_retention_days"`
-	LoadAvg                bool    `yaml:"loadavg"`
-	LoadAvgThreshold       float64 `yaml:"loadavg_threshold"`
 	Process                bool    `yaml:"process"`
 	ProcessThreshold       int     `yaml:"process_threshold"`
 	CPUTemp                bool    `yaml:"cpu_temp"`
@@ -156,12 +153,8 @@ func Load(path string) (*Config, error) {
 		snap.Alert.MetricsRetentionDays = snap.Alert.RetentionDays
 	}
 
-	// New collectors default to enabled (new fields, absent from existing configs).
-	snap.Monitor.LoadAvg = true
-	snap.Monitor.Process = true
-	snap.Monitor.Uptime = true
-	snap.Monitor.TCPStat = true
-	snap.Monitor.CPUTemp = true
+	// Optional collectors: disabled by default, enable via config
+	// loadavg is removed - not useful for most users
 
 	if err := validate(&snap); err != nil {
 		return nil, err
@@ -196,7 +189,6 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"lan_wan_split": c.data.Monitor.LanWanSplit,
 			"disk_root":     c.data.Monitor.DiskRoot,
 			"disk_io":       c.data.Monitor.DiskIO,
-			"loadavg":       c.data.Monitor.LoadAvg,
 			"process":       c.data.Monitor.Process,
 			"uptime":        c.data.Monitor.Uptime,
 			"tcpstat":       c.data.Monitor.TCPStat,
@@ -231,8 +223,6 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"monthly_retention_months": c.data.Alert.MonthlyRetentionMonths,
 			"alert_retention_days":     c.data.Alert.AlertRetentionDays,
 			"metrics_retention_days":   c.data.Alert.MetricsRetentionDays,
-			"loadavg":                  c.data.Alert.LoadAvg,
-			"loadavg_threshold":        c.data.Alert.LoadAvgThreshold,
 			"process":                  c.data.Alert.Process,
 			"process_threshold":        c.data.Alert.ProcessThreshold,
 			"cpu_temp":                 c.data.Alert.CPUTemp,
@@ -340,9 +330,6 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		if v, ok := mon["disk_io"].(bool); ok {
 			c.Monitor.DiskIO = v
 		}
-		if v, ok := mon["loadavg"].(bool); ok {
-			c.Monitor.LoadAvg = v
-		}
 		if v, ok := mon["process"].(bool); ok {
 			c.Monitor.Process = v
 		}
@@ -446,12 +433,6 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		}
 		if v, ok := alert["metrics_retention_days"].(float64); ok && v > 0 {
 			c.Alert.MetricsRetentionDays = int(v)
-		}
-		if v, ok := alert["loadavg"].(bool); ok {
-			c.Alert.LoadAvg = v
-		}
-		if v, ok := alert["loadavg_threshold"].(float64); ok {
-			c.Alert.LoadAvgThreshold = v
 		}
 		if v, ok := alert["process"].(bool); ok {
 			c.Alert.Process = v
