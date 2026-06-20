@@ -397,12 +397,20 @@
                 <input type="number" id="alert_interval" min="60">
             </div>
             <div class="field" style="margin-top:16px">
-                <label>历史数据保留天数</label>
+                <label>网络流量保留天数</label>
                 <input type="number" id="alert_retention_days" min="1" placeholder="30">
             </div>
             <div class="field" style="margin-top:16px">
                 <label>月度汇总保留月数</label>
                 <input type="number" id="alert_monthly_retention_months" min="1" placeholder="12">
+            </div>
+            <div class="field" style="margin-top:16px">
+                <label>告警历史保留天数</label>
+                <input type="number" id="alert_alert_retention_days" min="1" placeholder="30">
+            </div>
+            <div class="field" style="margin-top:16px">
+                <label>性能指标保留天数</label>
+                <input type="number" id="alert_metrics_retention_days" min="1" placeholder="30">
             </div>
         </div>
 
@@ -501,6 +509,8 @@
                 document.getElementById('alert_duration').value = cfg.alert.duration || 0;
                 document.getElementById('alert_retention_days').value = cfg.alert.retention_days || 30;
                 document.getElementById('alert_monthly_retention_months').value = cfg.alert.monthly_retention_months || 12;
+                document.getElementById('alert_alert_retention_days').value = cfg.alert.alert_retention_days || cfg.alert.retention_days || 30;
+                document.getElementById('alert_metrics_retention_days').value = cfg.alert.metrics_retention_days || cfg.alert.retention_days || 30;
             }).catch(function(e) { showToast('加载配置失败', 'error'); });
         }
 
@@ -553,8 +563,10 @@
                     disk_write_threshold: humanToBytes(document.getElementById('alert_disk_write_threshold').value, document.getElementById('alert_disk_write_unit').value),
                     interval: parseInt(document.getElementById('alert_interval').value) || 300,
                     duration: parseInt(document.getElementById('alert_duration').value) || 0,
-	                    retention_days: parseInt(document.getElementById('alert_retention_days').value) || 30,
-	                    monthly_retention_months: parseInt(document.getElementById('alert_monthly_retention_months').value) || 12
+                    retention_days: parseInt(document.getElementById('alert_retention_days').value) || 30,
+                    monthly_retention_months: parseInt(document.getElementById('alert_monthly_retention_months').value) || 12,
+                    alert_retention_days: parseInt(document.getElementById('alert_alert_retention_days').value) || 30,
+                    metrics_retention_days: parseInt(document.getElementById('alert_metrics_retention_days').value) || 30
                 }
             };
 

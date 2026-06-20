@@ -93,6 +93,8 @@ type AlertConfig struct {
 	Interval               int     `yaml:"interval"`
 	RetentionDays          int     `yaml:"retention_days"`
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
+	AlertRetentionDays     int     `yaml:"alert_retention_days"`
+	MetricsRetentionDays   int     `yaml:"metrics_retention_days"`
 	LoadAvg                bool    `yaml:"loadavg"`
 	LoadAvgThreshold       float64 `yaml:"loadavg_threshold"`
 	Process                bool    `yaml:"process"`
@@ -144,6 +146,14 @@ func Load(path string) (*Config, error) {
 
 	if snap.Alert.MonthlyRetentionMonths == 0 {
 		snap.Alert.MonthlyRetentionMonths = 12
+	}
+
+	if snap.Alert.AlertRetentionDays == 0 {
+		snap.Alert.AlertRetentionDays = snap.Alert.RetentionDays
+	}
+
+	if snap.Alert.MetricsRetentionDays == 0 {
+		snap.Alert.MetricsRetentionDays = snap.Alert.RetentionDays
 	}
 
 	// New collectors default to enabled (new fields, absent from existing configs).
@@ -219,6 +229,8 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"duration":                 c.data.Alert.Duration,
 			"retention_days":           c.data.Alert.RetentionDays,
 			"monthly_retention_months": c.data.Alert.MonthlyRetentionMonths,
+			"alert_retention_days":     c.data.Alert.AlertRetentionDays,
+			"metrics_retention_days":   c.data.Alert.MetricsRetentionDays,
 			"loadavg":                  c.data.Alert.LoadAvg,
 			"loadavg_threshold":        c.data.Alert.LoadAvgThreshold,
 			"process":                  c.data.Alert.Process,
@@ -429,6 +441,12 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		if v, ok := alert["monthly_retention_months"].(float64); ok && v > 0 {
 			c.Alert.MonthlyRetentionMonths = int(v)
 		}
+		if v, ok := alert["alert_retention_days"].(float64); ok && v > 0 {
+			c.Alert.AlertRetentionDays = int(v)
+		}
+		if v, ok := alert["metrics_retention_days"].(float64); ok && v > 0 {
+			c.Alert.MetricsRetentionDays = int(v)
+		}
 		if v, ok := alert["loadavg"].(bool); ok {
 			c.Alert.LoadAvg = v
 		}
@@ -499,6 +517,12 @@ func validate(c *Snapshot) error {
 	}
 	if c.Alert.MonthlyRetentionMonths < 0 {
 		return fmt.Errorf("invalid alert.monthly_retention_months: %d", c.Alert.MonthlyRetentionMonths)
+	}
+	if c.Alert.AlertRetentionDays < 0 {
+		return fmt.Errorf("invalid alert.alert_retention_days: %d", c.Alert.AlertRetentionDays)
+	}
+	if c.Alert.MetricsRetentionDays < 0 {
+		return fmt.Errorf("invalid alert.metrics_retention_days: %d", c.Alert.MetricsRetentionDays)
 	}
 	if c.Server.Timezone != "" {
 		if _, err := time.LoadLocation(c.Server.Timezone); err != nil {

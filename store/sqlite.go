@@ -498,21 +498,40 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 	snap := cfg.Snapshot()
 	retentionDays := snap.Alert.RetentionDays
 	retentionMonths := snap.Alert.MonthlyRetentionMonths
+	alertRetentionDays := snap.Alert.AlertRetentionDays
+	metricsRetentionDays := snap.Alert.MetricsRetentionDays
+
+	// Use specific retention days if configured, otherwise fall back to general retention days
+	if alertRetentionDays <= 0 {
+		alertRetentionDays = retentionDays
+	}
+	if metricsRetentionDays <= 0 {
+		metricsRetentionDays = retentionDays
+	}
+
 	if retentionDays > 0 || retentionMonths > 0 {
 		if err := s.CleanOldData(retentionDays, retentionMonths); err != nil {
 			log.Println("清理历史数据失败:", err)
 		} else {
-			log.Printf("已清理 %d 天/%d 月以前的历史数据", retentionDays, retentionMonths)
+			log.Printf("已清理 %d 天/%d 月以前的网络流量数据", retentionDays, retentionMonths)
 		}
 	}
 
-	// Clean old alerts and metrics
-	if retentionDays > 0 {
-		if err := s.CleanOldAlerts(retentionDays); err != nil {
+	// Clean old alerts with specific retention days
+	if alertRetentionDays > 0 {
+		if err := s.CleanOldAlerts(alertRetentionDays); err != nil {
 			log.Println("清理告警历史失败:", err)
+		} else {
+			log.Printf("已清理 %d 天以前的告警历史", alertRetentionDays)
 		}
-		if err := s.CleanOldMetrics(retentionDays); err != nil {
+	}
+
+	// Clean old metrics with specific retention days
+	if metricsRetentionDays > 0 {
+		if err := s.CleanOldMetrics(metricsRetentionDays); err != nil {
 			log.Println("清理指标历史失败:", err)
+		} else {
+			log.Printf("已清理 %d 天以前的指标历史", metricsRetentionDays)
 		}
 	}
 }
