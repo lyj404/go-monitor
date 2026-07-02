@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"go-monitor/collector"
-	"go-monitor/config"
+	"github.com/lyj404/go-monitor/collector"
+	"github.com/lyj404/go-monitor/config"
 )
 
 const (

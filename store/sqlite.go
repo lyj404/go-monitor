@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"go-monitor/collector"
-	"go-monitor/config"
+	"github.com/lyj404/go-monitor/collector"
+	"github.com/lyj404/go-monitor/config"
 
 	_ "modernc.org/sqlite"
 )

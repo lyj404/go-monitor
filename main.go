@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"go-monitor/alerter"
-	"go-monitor/collector"
-	"go-monitor/config"
-	"go-monitor/server"
-	"go-monitor/store"
+	"github.com/lyj404/go-monitor/alerter"
+	"github.com/lyj404/go-monitor/collector"
+	"github.com/lyj404/go-monitor/config"
+	"github.com/lyj404/go-monitor/server"
+	"github.com/lyj404/go-monitor/store"
 )
 
 func main() {

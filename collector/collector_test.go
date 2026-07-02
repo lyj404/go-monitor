@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"go-monitor/config"
+	"github.com/lyj404/go-monitor/config"
 )
 
 func TestCollectorStopIsIdempotent(t *testing.T) {

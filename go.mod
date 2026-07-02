@@ -1,4 +1,4 @@
-module go-monitor
+module github.com/lyj404/go-monitor
 
 go 1.25.1
 

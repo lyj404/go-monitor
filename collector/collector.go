@@ -2,7 +2,7 @@ package collector
 
 import (
 	"encoding/json"
-	"go-monitor/config"
+	"github.com/lyj404/go-monitor/config"
 	"log"
 	"sync"
 	"time"
