@@ -26,13 +26,29 @@ func TestSendDropsWhenQueueFull(t *testing.T) {
 	}
 	a.jobs <- emailJob{}
 
-	a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}})
+	if ok := a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}}); ok {
+		t.Fatal("expected send to fail when queue is full")
+	}
 
 	if len(a.jobs) != 1 {
 		t.Fatalf("expected full queue to drop new job, len=%d", len(a.jobs))
 	}
 	if _, ok := a.lastSent["CPU"]; !ok {
 		t.Fatal("expected lastSent to retain timestamp so dropped alert backs off until the next interval")
+	}
+}
+
+func TestShouldFireDurationZero(t *testing.T) {
+	t.Parallel()
+
+	a := New()
+	defer a.Close()
+
+	if !a.shouldFire("cpu", true, 0) {
+		t.Fatal("duration=0 should fire on first met sample")
+	}
+	if a.shouldFire("cpu", false, 0) {
+		t.Fatal("cleared condition must not fire")
 	}
 }
 

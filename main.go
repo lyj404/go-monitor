@@ -36,12 +36,27 @@ func main() {
 	}
 	log.Println("数据目录:", dataDir)
 
-	var al *alerter.Alerter
+	// Always create the alerter so enabling alerts via config reload works
+	// without a process restart. CheckWithConfig no-ops when alert.enabled=false.
+	al := alerter.New()
 	if snap.Alert.Enabled {
-		al = alerter.New()
 		log.Println("报警功能已启用")
 	} else {
-		log.Println("报警功能未启用")
+		log.Println("报警功能未启用（可通过配置热更新开启）")
+	}
+
+	db, err := store.NewDB(dataDir)
+	if err != nil {
+		log.Println("数据库初始化失败:", err)
+	}
+
+	// Wire alert history before collector starts to avoid racing SetOnAlert.
+	if db != nil {
+		al.SetOnAlert(func(alertType, message, currentValue, threshold string) {
+			if err := db.SaveAlert(alertType, message, currentValue, threshold); err != nil {
+				log.Println("保存告警历史失败:", err)
+			}
+		})
 	}
 
 	col := collector.NewCollector(cfg, al)
@@ -55,20 +70,6 @@ func main() {
 	col.Start()
 	defer col.Stop()
 	defer collector.DisableLanWanSplit()
-
-	db, err := store.NewDB(dataDir)
-	if err != nil {
-		log.Println("数据库初始化失败:", err)
-	}
-
-	// Wire alert history persistence
-	if al != nil && db != nil {
-		al.SetOnAlert(func(alertType, message, currentValue, threshold string) {
-			if err := db.SaveAlert(alertType, message, currentValue, threshold); err != nil {
-				log.Println("保存告警历史失败:", err)
-			}
-		})
-	}
 
 	svr := server.NewServer(cfg, col, db)
 	handler := svr.Routes()
@@ -115,11 +116,9 @@ func main() {
 
 	svr.Close()
 	col.Stop()
+	al.Close()
 	if db != nil {
 		db.Close()
-	}
-	if al != nil {
-		al.Close()
 	}
 	log.Println("服务已关闭")
 }

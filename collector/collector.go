@@ -178,45 +178,53 @@ func (c *Collector) collect() {
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if p, err := CollectProcess(); err == nil {
-			mu.Lock()
-			m.Process = p
-			mu.Unlock()
-		}
-	}()
+	if enabled.Monitor.Process {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if p, err := CollectProcess(); err == nil {
+				mu.Lock()
+				m.Process = p
+				mu.Unlock()
+			}
+		}()
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if u, err := CollectUptime(); err == nil {
-			mu.Lock()
-			m.Uptime = u
-			mu.Unlock()
-		}
-	}()
+	if enabled.Monitor.Uptime {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if u, err := CollectUptime(); err == nil {
+				mu.Lock()
+				m.Uptime = u
+				mu.Unlock()
+			}
+		}()
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if ts, err := CollectTCPStat(); err == nil {
-			mu.Lock()
-			m.TCPStat = ts
-			mu.Unlock()
-		}
-	}()
+	if enabled.Monitor.TCPStat {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ts, err := CollectTCPStat(); err == nil {
+				mu.Lock()
+				m.TCPStat = ts
+				mu.Unlock()
+			}
+		}()
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if t, err := CollectCPUTemp(); err == nil {
-			mu.Lock()
-			m.CPUTemp = t
-			mu.Unlock()
-		}
-	}()
+	if enabled.Monitor.CPUTemp {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if t, err := CollectCPUTemp(); err == nil {
+				mu.Lock()
+				m.CPUTemp = t
+				mu.Unlock()
+			}
+		}()
+	}
 
 	wg.Wait()
 
@@ -261,17 +269,20 @@ func (c *Collector) UpdateSnapshot() {
 
 // Hourly metrics accumulator for daily_metrics persistence.
 var (
-	hourlyMu       sync.Mutex
-	hourlyCPUSum   float64
-	hourlyCPUMax   float64
-	hourlyMemSum   float64
-	hourlyMemMax   float64
-	hourlyDiskSum  float64
-	hourlyDiskMax  float64
-	hourlySamples  int
+	hourlyMu         sync.Mutex
+	hourlyCPUSum     float64
+	hourlyCPUMax     float64
+	hourlyCPUSamples int
+	hourlyMemSum     float64
+	hourlyMemMax     float64
+	hourlyMemSamples int
+	hourlyDiskSum    float64
+	hourlyDiskMax    float64
+	hourlyDiskSamples int
 )
 
 // AccumulateMetrics adds the current metrics snapshot to the hourly accumulator.
+// Each metric keeps its own sample count so missing collectors do not dilute averages.
 func AccumulateMetrics(m Metrics) {
 	hourlyMu.Lock()
 	defer hourlyMu.Unlock()
@@ -281,28 +292,33 @@ func AccumulateMetrics(m Metrics) {
 		if m.CPU.Usage > hourlyCPUMax {
 			hourlyCPUMax = m.CPU.Usage
 		}
+		hourlyCPUSamples++
 	}
 	if m.Memory != nil {
 		hourlyMemSum += m.Memory.Usage
 		if m.Memory.Usage > hourlyMemMax {
 			hourlyMemMax = m.Memory.Usage
 		}
+		hourlyMemSamples++
 	}
 	if m.Disk != nil {
 		hourlyDiskSum += m.Disk.Usage
 		if m.Disk.Usage > hourlyDiskMax {
 			hourlyDiskMax = m.Disk.Usage
 		}
+		hourlyDiskSamples++
 	}
-	hourlySamples++
 }
 
 // HourlyMetrics holds the aggregated metrics for one hour.
 type HourlyMetrics struct {
-	AvgCPU, MaxCPU     float64
+	AvgCPU, MaxCPU       float64
 	AvgMemory, MaxMemory float64
-	AvgDisk, MaxDisk   float64
-	SampleCount        int
+	AvgDisk, MaxDisk     float64
+	CPUSamples           int
+	MemSamples           int
+	DiskSamples          int
+	SampleCount          int
 }
 
 // GetHourlyMetricsAndReset returns the accumulated hourly metrics and resets
@@ -312,20 +328,32 @@ func GetHourlyMetricsAndReset() HourlyMetrics {
 	defer hourlyMu.Unlock()
 
 	var hm HourlyMetrics
-	if hourlySamples > 0 {
-		hm.AvgCPU = hourlyCPUSum / float64(hourlySamples)
+	if hourlyCPUSamples > 0 {
+		hm.AvgCPU = hourlyCPUSum / float64(hourlyCPUSamples)
 		hm.MaxCPU = hourlyCPUMax
-		hm.AvgMemory = hourlyMemSum / float64(hourlySamples)
+		hm.CPUSamples = hourlyCPUSamples
+	}
+	if hourlyMemSamples > 0 {
+		hm.AvgMemory = hourlyMemSum / float64(hourlyMemSamples)
 		hm.MaxMemory = hourlyMemMax
-		hm.AvgDisk = hourlyDiskSum / float64(hourlySamples)
+		hm.MemSamples = hourlyMemSamples
+	}
+	if hourlyDiskSamples > 0 {
+		hm.AvgDisk = hourlyDiskSum / float64(hourlyDiskSamples)
 		hm.MaxDisk = hourlyDiskMax
-		hm.SampleCount = hourlySamples
+		hm.DiskSamples = hourlyDiskSamples
+	}
+	hm.SampleCount = hourlyCPUSamples
+	if hourlyMemSamples > hm.SampleCount {
+		hm.SampleCount = hourlyMemSamples
+	}
+	if hourlyDiskSamples > hm.SampleCount {
+		hm.SampleCount = hourlyDiskSamples
 	}
 
-	hourlyCPUSum, hourlyCPUMax = 0, 0
-	hourlyMemSum, hourlyMemMax = 0, 0
-	hourlyDiskSum, hourlyDiskMax = 0, 0
-	hourlySamples = 0
+	hourlyCPUSum, hourlyCPUMax, hourlyCPUSamples = 0, 0, 0
+	hourlyMemSum, hourlyMemMax, hourlyMemSamples = 0, 0, 0
+	hourlyDiskSum, hourlyDiskMax, hourlyDiskSamples = 0, 0, 0
 
 	return hm
 }

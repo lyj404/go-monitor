@@ -14,6 +14,13 @@ func TestNextHour(t *testing.T) {
 	if got := nextHour(now); !got.Equal(want) {
 		t.Fatalf("nextHour(%v) = %v, want %v", now, got, want)
 	}
+
+	loc := time.FixedZone("CST", 8*3600)
+	nowCST := time.Date(2026, 5, 6, 10, 23, 45, 0, loc)
+	wantCST := time.Date(2026, 5, 6, 11, 0, 0, 0, loc)
+	if got := nextHour(nowCST); !got.Equal(wantCST) {
+		t.Fatalf("nextHour(%v) = %v, want %v", nowCST, got, wantCST)
+	}
 }
 
 func TestSaveHourlyNetworkPersistsZeroTrafficDay(t *testing.T) {

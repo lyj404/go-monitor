@@ -166,13 +166,14 @@ func initNftablesCountersExec() error {
 	lanV4 := "{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 127.0.0.0/8 }"
 	lanV6 := "{ fc00::/7, fe80::/10, ::1/128 }"
 
+	// LAN rules must return so packets are not also counted as WAN.
 	if err := runNft("add", "rule", "inet", "monitor", "prerouting",
-		"ip", "saddr", lanV4, "counter", "name", "lan_ingress",
+		"ip", "saddr", lanV4, "counter", "name", "lan_ingress", "return",
 	); err != nil {
 		return err
 	}
 	if err := runNft("add", "rule", "inet", "monitor", "prerouting",
-		"ip6", "saddr", lanV6, "counter", "name", "lan_ingress",
+		"ip6", "saddr", lanV6, "counter", "name", "lan_ingress", "return",
 	); err != nil {
 		return err
 	}
@@ -189,12 +190,12 @@ func initNftablesCountersExec() error {
 	}
 
 	if err := runNft("add", "rule", "inet", "monitor", "postrouting",
-		"ip", "daddr", lanV4, "counter", "name", "lan_egress",
+		"ip", "daddr", lanV4, "counter", "name", "lan_egress", "return",
 	); err != nil {
 		return err
 	}
 	if err := runNft("add", "rule", "inet", "monitor", "postrouting",
-		"ip6", "daddr", lanV6, "counter", "name", "lan_egress",
+		"ip6", "daddr", lanV6, "counter", "name", "lan_egress", "return",
 	); err != nil {
 		return err
 	}
@@ -441,15 +442,9 @@ func CollectNetwork() (*Network, error) {
 	}
 	defer f.Close()
 
-	var deltaUpload, deltaDownload int64
-	var counterRegressed bool
-	var regressedIface string
-
-	networkMu.Lock()
-	defer networkMu.Unlock()
-
-	now := time.Now()
-
+	// Parse counters without holding networkMu so slow /proc reads and
+	// physical-NIC cache refresh do not block hourly total resets.
+	current := make(map[string]netCounter)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(nil, 1024*1024)
 	for scanner.Scan() {
@@ -460,28 +455,35 @@ func CollectNetwork() (*Network, error) {
 		}
 
 		iface := strings.Trim(parts[0], ":")
-
 		if !isPhysicalNIC(iface) {
 			continue
 		}
 
 		rx, _ := strconv.ParseInt(parts[1], 10, 64)
 		tx, _ := strconv.ParseInt(parts[9], 10, 64)
+		current[iface] = netCounter{rx: rx, tx: tx}
+	}
 
+	now := time.Now()
+	var deltaUpload, deltaDownload int64
+	var counterRegressed bool
+	var regressedIface string
+
+	networkMu.Lock()
+	for iface, cur := range current {
 		last, exists := lastNetworkStats[iface]
 		if exists {
-			if rx < last.rx || tx < last.tx {
+			if cur.rx < last.rx || cur.tx < last.tx {
 				counterRegressed = true
 				if regressedIface == "" {
 					regressedIface = iface
 				}
 			} else {
-				deltaDownload += rx - last.rx
-				deltaUpload += tx - last.tx
+				deltaDownload += cur.rx - last.rx
+				deltaUpload += cur.tx - last.tx
 			}
 		}
-
-		lastNetworkStats[iface] = netCounter{rx: rx, tx: tx}
+		lastNetworkStats[iface] = cur
 	}
 
 	// On counter regression (NIC reset, 32-bit wraparound, hot-plug),
@@ -489,16 +491,14 @@ func CollectNetwork() (*Network, error) {
 	if counterRegressed {
 		log.Printf("网络计数器回退，跳过本轮速率计算 (iface=%s)", regressedIface)
 		lastNetworkSampled = now
+		networkMu.Unlock()
 		return &Network{}, nil
 	}
 
 	totalUpload += deltaUpload
 	totalDownload += deltaDownload
 
-	// elapsed is computed via time.Now().Sub(), which uses Go's monotonic
-	// clock — wall-clock adjustments don't affect it. We still guard against
-	// elapsed == 0 (rapid successive calls) and abnormally large elapsed
-	// (process was suspended), which would yield meaningless rates.
+	// elapsed uses Go's monotonic clock component of time.Time.
 	const maxElapsedSeconds = 600.0
 
 	var rateUp, rateDown int64
@@ -514,68 +514,72 @@ func CollectNetwork() (*Network, error) {
 		}
 	}
 	lastNetworkSampled = now
+	networkMu.Unlock()
 
 	n := &Network{
 		Upload:   rateUp,
 		Download: rateDown,
 	}
 
-	if elapsed > 0 {
-		var lanRcv, lanSnd, wanRcv, wanSnd int64
-		var readErr error
+	if elapsed <= 0 {
+		return n, nil
+	}
 
-		classifierMu.RLock()
-		cl := classifier
-		classifierMu.RUnlock()
+	classifierMu.RLock()
+	cl := classifier
+	classifierMu.RUnlock()
 
-		switch cl {
-		case classifierNftables:
-			lanRcv, lanSnd, wanRcv, wanSnd, readErr = readNftablesCounters()
-		case classifierIptables:
-			lanRcv, lanSnd, wanRcv, wanSnd, readErr = readIptablesCounters()
+	var lanRcv, lanSnd, wanRcv, wanSnd int64
+	var readErr error
+	switch cl {
+	case classifierNftables:
+		lanRcv, lanSnd, wanRcv, wanSnd, readErr = readNftablesCounters()
+	case classifierIptables:
+		lanRcv, lanSnd, wanRcv, wanSnd, readErr = readIptablesCounters()
+	default:
+		return n, nil
+	}
+
+	if readErr != nil {
+		return n, nil
+	}
+
+	lanWanMu.Lock()
+	lanWanRegressed := (lastLanIngress > 0 && lanRcv < lastLanIngress) ||
+		(lastLanEgress > 0 && lanSnd < lastLanEgress) ||
+		(lastWanIngress > 0 && wanRcv < lastWanIngress) ||
+		(lastWanEgress > 0 && wanSnd < lastWanEgress)
+
+	if lanWanRegressed {
+		log.Println("LAN/WAN 计数器回退，跳过本轮速率计算")
+	} else {
+		if lastLanIngress > 0 && lanRcv >= lastLanIngress {
+			delta := lanRcv - lastLanIngress
+			totalLanDownload += delta
+			n.LanDownload = int64(float64(delta) / elapsed)
 		}
-
-		if readErr == nil && (cl == classifierNftables || cl == classifierIptables) {
-			lanWanMu.Lock()
-
-			lanWanRegressed := (lastLanIngress > 0 && lanRcv < lastLanIngress) ||
-				(lastLanEgress > 0 && lanSnd < lastLanEgress) ||
-				(lastWanIngress > 0 && wanRcv < lastWanIngress) ||
-				(lastWanEgress > 0 && wanSnd < lastWanEgress)
-
-			if lanWanRegressed {
-				log.Println("LAN/WAN 计数器回退，跳过本轮速率计算")
-			} else {
-				if lastLanIngress > 0 && lanRcv >= lastLanIngress {
-					delta := lanRcv - lastLanIngress
-					totalLanDownload += delta
-					n.LanDownload = int64(float64(delta) / elapsed)
-				}
-				if lastLanEgress > 0 && lanSnd >= lastLanEgress {
-					delta := lanSnd - lastLanEgress
-					totalLanUpload += delta
-					n.LanUpload = int64(float64(delta) / elapsed)
-				}
-				if lastWanIngress > 0 && wanRcv >= lastWanIngress {
-					delta := wanRcv - lastWanIngress
-					totalWanDownload += delta
-					n.WanDownload = int64(float64(delta) / elapsed)
-				}
-				if lastWanEgress > 0 && wanSnd >= lastWanEgress {
-					delta := wanSnd - lastWanEgress
-					totalWanUpload += delta
-					n.WanUpload = int64(float64(delta) / elapsed)
-				}
-			}
-
-			lastLanIngress = lanRcv
-			lastLanEgress = lanSnd
-			lastWanIngress = wanRcv
-			lastWanEgress = wanSnd
-
-			lanWanMu.Unlock()
+		if lastLanEgress > 0 && lanSnd >= lastLanEgress {
+			delta := lanSnd - lastLanEgress
+			totalLanUpload += delta
+			n.LanUpload = int64(float64(delta) / elapsed)
+		}
+		if lastWanIngress > 0 && wanRcv >= lastWanIngress {
+			delta := wanRcv - lastWanIngress
+			totalWanDownload += delta
+			n.WanDownload = int64(float64(delta) / elapsed)
+		}
+		if lastWanEgress > 0 && wanSnd >= lastWanEgress {
+			delta := wanSnd - lastWanEgress
+			totalWanUpload += delta
+			n.WanUpload = int64(float64(delta) / elapsed)
 		}
 	}
+
+	lastLanIngress = lanRcv
+	lastLanEgress = lanSnd
+	lastWanIngress = wanRcv
+	lastWanEgress = wanSnd
+	lanWanMu.Unlock()
 
 	return n, nil
 }

@@ -63,15 +63,20 @@ func New() *Alerter {
 	return a
 }
 
-// SetOnAlert registers a callback that fires alongside each alert email.
+// SetOnAlert registers a callback that fires when an alert email is queued.
 // The callback receives (alertType, message, currentValue, threshold).
 func (a *Alerter) SetOnAlert(fn func(alertType, message, currentValue, threshold string)) {
+	a.mu.Lock()
 	a.onAlert = fn
+	a.mu.Unlock()
 }
 
 func (a *Alerter) notifyAlert(alertType, message, currentValue, threshold string) {
-	if a.onAlert != nil {
-		a.onAlert(alertType, message, currentValue, threshold)
+	a.mu.Lock()
+	fn := a.onAlert
+	a.mu.Unlock()
+	if fn != nil {
+		fn(alertType, message, currentValue, threshold)
 	}
 }
 
@@ -104,36 +109,46 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 
 	if cfg.Alert.CPU && m.CPU != nil {
 		if a.shouldFire("cpu", m.CPU.Usage >= cfg.Alert.CPUThreshold, duration) {
-			a.send("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), cfg)
-			a.notifyAlert("CPU", fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold), fmt.Sprintf("%.1f%%", m.CPU.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.CPUThreshold))
+			msg := fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold)
+			if a.send("CPU", msg, cfg) {
+				a.notifyAlert("CPU", msg, fmt.Sprintf("%.1f%%", m.CPU.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.CPUThreshold))
+			}
 		}
 	}
 
 	if cfg.Alert.Memory && m.Memory != nil {
 		if a.shouldFire("memory", m.Memory.Usage >= cfg.Alert.MemoryThreshold, duration) {
-			a.send("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), cfg)
-			a.notifyAlert("内存", fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold), fmt.Sprintf("%.1f%%", m.Memory.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.MemoryThreshold))
+			msg := fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold)
+			if a.send("内存", msg, cfg) {
+				a.notifyAlert("内存", msg, fmt.Sprintf("%.1f%%", m.Memory.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.MemoryThreshold))
+			}
 		}
 	}
 
 	if cfg.Alert.Disk && m.Disk != nil {
 		if a.shouldFire("disk", m.Disk.Usage >= cfg.Alert.DiskThreshold, duration) {
-			a.send("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), cfg)
-			a.notifyAlert("磁盘", fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold), fmt.Sprintf("%.1f%%", m.Disk.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.DiskThreshold))
+			msg := fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold)
+			if a.send("磁盘", msg, cfg) {
+				a.notifyAlert("磁盘", msg, fmt.Sprintf("%.1f%%", m.Disk.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.DiskThreshold))
+			}
 		}
 	}
 
 	if m.Network != nil {
 		if cfg.Alert.NetworkUp {
 			if a.shouldFire("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold, duration) {
-				a.send("网络上传", fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), cfg)
-				a.notifyAlert("网络上传", fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold)), formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s")
+				msg := fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold))
+				if a.send("网络上传", msg, cfg) {
+					a.notifyAlert("网络上传", msg, formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s")
+				}
 			}
 		}
 		if cfg.Alert.NetworkDown {
 			if a.shouldFire("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold, duration) {
-				a.send("网络下载", fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), cfg)
-				a.notifyAlert("网络下载", fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold)), formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s")
+				msg := fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold))
+				if a.send("网络下载", msg, cfg) {
+					a.notifyAlert("网络下载", msg, formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s")
+				}
 			}
 		}
 	}
@@ -141,44 +156,55 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	if m.DiskIO != nil {
 		if cfg.Alert.DiskRead {
 			if a.shouldFire("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold, duration) {
-				a.send("磁盘读取", fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), cfg)
-				a.notifyAlert("磁盘读取", fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold)), formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s")
+				msg := fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold))
+				if a.send("磁盘读取", msg, cfg) {
+					a.notifyAlert("磁盘读取", msg, formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s")
+				}
 			}
 		}
 		if cfg.Alert.DiskWrite {
 			if a.shouldFire("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold, duration) {
-				a.send("磁盘写入", fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), cfg)
-				a.notifyAlert("磁盘写入", fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold)), formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s")
+				msg := fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold))
+				if a.send("磁盘写入", msg, cfg) {
+					a.notifyAlert("磁盘写入", msg, formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s")
+				}
 			}
 		}
 	}
 
 	if cfg.Alert.Process && m.Process != nil {
 		if a.shouldFire("process", m.Process.Count >= cfg.Alert.ProcessThreshold, duration) {
-			a.send("进程数", fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold), cfg)
-			a.notifyAlert("进程数", fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold), fmt.Sprintf("%d", m.Process.Count), fmt.Sprintf("%d", cfg.Alert.ProcessThreshold))
+			msg := fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold)
+			if a.send("进程数", msg, cfg) {
+				a.notifyAlert("进程数", msg, fmt.Sprintf("%d", m.Process.Count), fmt.Sprintf("%d", cfg.Alert.ProcessThreshold))
+			}
 		}
 	}
 
 	if cfg.Alert.CPUTemp && m.CPUTemp != nil {
 		if a.shouldFire("cpu_temp", m.CPUTemp.Temp >= cfg.Alert.CPUTempThreshold, duration) {
-			a.send("CPU温度", fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold), cfg)
-			a.notifyAlert("CPU温度", fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold), fmt.Sprintf("%.1f°C", m.CPUTemp.Temp), fmt.Sprintf("%.1f°C", cfg.Alert.CPUTempThreshold))
+			msg := fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold)
+			if a.send("CPU温度", msg, cfg) {
+				a.notifyAlert("CPU温度", msg, fmt.Sprintf("%.1f°C", m.CPUTemp.Temp), fmt.Sprintf("%.1f°C", cfg.Alert.CPUTempThreshold))
+			}
 		}
 	}
 
 	if cfg.Alert.CloseWait && m.TCPStat != nil {
 		if a.shouldFire("close_wait", m.TCPStat.CloseWait >= cfg.Alert.CloseWaitThreshold, duration) {
-			a.send("TCP CLOSE_WAIT", fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold), cfg)
-			a.notifyAlert("TCP CLOSE_WAIT", fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold), fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold))
+			msg := fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold)
+			if a.send("TCP CLOSE_WAIT", msg, cfg) {
+				a.notifyAlert("TCP CLOSE_WAIT", msg, fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold))
+			}
 		}
 	}
 }
 
 // shouldFire returns true when the condition has been continuously met for
-// the configured duration. The state is reset on success so that re-firing
-// requires another full duration window — limiting noise. The actual
-// "minimum interval between emails" is enforced separately in send().
+// the configured duration. duration <= 0 fires on the first sample that meets
+// the condition. The state is reset on success so that re-firing requires
+// another full duration window — limiting noise. The actual "minimum interval
+// between emails" is enforced separately in send().
 func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Duration) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -192,6 +218,9 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 	}
 
 	if !exists {
+		if duration <= 0 {
+			return true
+		}
 		a.conditionStartTimes[name] = time.Now()
 		return false
 	}
@@ -203,19 +232,21 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 	return false
 }
 
-func (a *Alerter) send(subject, body string, cfg config.Snapshot) {
+// send enqueues an alert email. Returns true when the job was accepted so
+// callers can persist matching alert history only for delivered attempts.
+func (a *Alerter) send(subject, body string, cfg config.Snapshot) bool {
 	interval := time.Duration(cfg.Alert.Interval) * time.Second
 	now := time.Now()
 
 	a.sendMu.Lock()
 	if a.closed {
 		a.sendMu.Unlock()
-		return
+		return false
 	}
 	a.pruneLastSentLocked(now)
 	if lastSent, ok := a.lastSent[subject]; ok && now.Sub(lastSent) < interval {
 		a.sendMu.Unlock()
-		return
+		return false
 	}
 	a.lastSent[subject] = now
 	a.sendMu.Unlock()
@@ -223,10 +254,12 @@ func (a *Alerter) send(subject, body string, cfg config.Snapshot) {
 	job := emailJob{subject: subject, body: body, cfg: cfg}
 	select {
 	case a.jobs <- job:
+		return true
 	default:
 		// Queue is full. Keep lastSent[subject] so the next tick doesn't
 		// immediately retry and pile up more drops — wait out the interval.
 		log.Printf("报警队列已满，丢弃邮件 [%s]，等待下一个发送窗口", subject)
+		return false
 	}
 }
 
@@ -240,7 +273,19 @@ func (a *Alerter) worker() {
 			}
 			a.deliver(job)
 		case <-a.stopCh:
-			return
+			// Drain queued jobs so in-flight alerts are not silently dropped
+			// on shutdown (bounded by Close's overall timeout via wg.Wait).
+			for {
+				select {
+				case job, ok := <-a.jobs:
+					if !ok {
+						return
+					}
+					a.deliver(job)
+				default:
+					return
+				}
+			}
 		}
 	}
 }

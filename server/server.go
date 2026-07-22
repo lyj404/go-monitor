@@ -40,6 +40,7 @@ type Server struct {
 
 	configJSONMu    sync.RWMutex
 	configJSONBytes []byte
+	configJSONGen   uint64
 }
 
 type sessionInfo struct {
@@ -282,9 +283,11 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Username == cfg.Auth.Username && req.Password == cfg.Auth.Password {
 		s.limitMu.Lock()
-		attempt.count = 0
-		attempt.lockedUntil = time.Time{}
-		attempt.lastSeen = time.Now()
+		if cur, ok := s.loginLimits[ip]; ok {
+			cur.count = 0
+			cur.lockedUntil = time.Time{}
+			cur.lastSeen = time.Now()
+		}
 		s.limitMu.Unlock()
 
 		token, err := generateToken()
@@ -321,11 +324,19 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.limitMu.Lock()
-	attempt.count++
-	attempt.lastSeen = time.Now()
-	if attempt.count >= 5 {
-		attempt.lockedUntil = time.Now().Add(5 * time.Minute)
-		attempt.count = 0
+	cur, ok := s.loginLimits[ip]
+	if !ok {
+		if len(s.loginLimits) >= maxLoginLimitEntries {
+			s.evictOldestLoginLimitLocked()
+		}
+		cur = &loginAttempt{}
+		s.loginLimits[ip] = cur
+	}
+	cur.count++
+	cur.lastSeen = time.Now()
+	if cur.count >= 5 {
+		cur.lockedUntil = time.Now().Add(5 * time.Minute)
+		cur.count = 0
 		log.Printf("登录锁定: IP %s 连续失败5次，锁定5分钟", ip)
 	}
 	s.limitMu.Unlock()
@@ -479,10 +490,12 @@ func (s *Server) getConfigHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // maskedConfigJSON returns a cached JSON encoding of the masked config. The
-// cache is invalidated on every successful Reload.
+// cache is invalidated on every successful Reload. A generation counter prevents
+// a slow marshal from writing a stale snapshot back after invalidation.
 func (s *Server) maskedConfigJSON() ([]byte, error) {
 	s.configJSONMu.RLock()
 	cached := s.configJSONBytes
+	gen := s.configJSONGen
 	s.configJSONMu.RUnlock()
 	if cached != nil {
 		return cached, nil
@@ -493,7 +506,11 @@ func (s *Server) maskedConfigJSON() ([]byte, error) {
 		return nil, err
 	}
 	s.configJSONMu.Lock()
-	s.configJSONBytes = data
+	if s.configJSONGen == gen && s.configJSONBytes == nil {
+		s.configJSONBytes = data
+	} else if s.configJSONBytes != nil {
+		data = s.configJSONBytes
+	}
 	s.configJSONMu.Unlock()
 	return data, nil
 }
@@ -501,6 +518,7 @@ func (s *Server) maskedConfigJSON() ([]byte, error) {
 func (s *Server) invalidateConfigJSON() {
 	s.configJSONMu.Lock()
 	s.configJSONBytes = nil
+	s.configJSONGen++
 	s.configJSONMu.Unlock()
 }
 
@@ -534,6 +552,7 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 	s.col.UpdateSnapshot()
 	s.invalidateConfigJSON()
+	s.applyLanWanSplit(s.cfg.Snapshot().Monitor.LanWanSplit)
 
 	if intervalChanged {
 		s.col.NotifyIntervalChanged()
@@ -542,4 +561,14 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("配置已更新并生效")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) applyLanWanSplit(enabled bool) {
+	if enabled {
+		if err := collector.EnableLanWanSplit(); err != nil {
+			log.Println("LAN/WAN 流量分类启用失败:", err)
+		}
+		return
+	}
+	collector.DisableLanWanSplit()
 }

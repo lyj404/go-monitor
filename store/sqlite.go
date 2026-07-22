@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/lyj404/go-monitor/collector"
@@ -15,7 +16,8 @@ import (
 )
 
 type DB struct {
-	db *sql.DB
+	db       *sql.DB
+	hourlyWg sync.WaitGroup
 }
 
 type DailyNetwork struct {
@@ -182,6 +184,9 @@ func (s *DB) init() error {
 		"ALTER TABLE monthly_network ADD COLUMN lan_download INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE monthly_network ADD COLUMN wan_upload INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE monthly_network ADD COLUMN wan_download INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_metrics ADD COLUMN cpu_samples INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_metrics ADD COLUMN memory_samples INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE daily_metrics ADD COLUMN disk_samples INTEGER NOT NULL DEFAULT 0",
 	}
 	for _, m := range migrateCols {
 		_, _ = s.db.Exec(m)
@@ -291,12 +296,19 @@ func (s *DB) SaveMonthlyNetwork(loc *time.Location) error {
 }
 
 func (s *DB) Close() error {
+	// Wait for the hourly worker to finish any in-flight run after stopCh
+	// is closed, so we never use the DB after Close returns.
+	s.hourlyWg.Wait()
 	return s.db.Close()
 }
 
 func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, cfg *config.Config) {
+	s.hourlyWg.Add(1)
 	go func() {
-		timer := time.NewTimer(time.Until(nextHour(time.Now())))
+		defer s.hourlyWg.Done()
+
+		loc := aggregationLocation(cfg)
+		timer := time.NewTimer(time.Until(nextHour(time.Now().In(loc))))
 		defer timer.Stop()
 
 		var ticker *time.Ticker
@@ -353,21 +365,22 @@ func (s *DB) GetMonthlyNetwork(startMonth, endMonth string, limit int) ([]Monthl
 	return result, nil
 }
 
-func (s *DB) CleanOldData(retentionDays, retentionMonths int) error {
+func (s *DB) CleanOldData(retentionDays, retentionMonths int, loc *time.Location) error {
+	if loc == nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+
 	if retentionDays > 0 {
-		if _, err := s.db.Exec(
-			`DELETE FROM daily_network WHERE date < date('now', ?)`,
-			"-"+itoa(retentionDays)+" days",
-		); err != nil {
+		cutoff := now.AddDate(0, 0, -retentionDays).Format("2006-01-02")
+		if _, err := s.db.Exec(`DELETE FROM daily_network WHERE date < ?`, cutoff); err != nil {
 			return err
 		}
 	}
 
 	if retentionMonths > 0 {
-		if _, err := s.db.Exec(
-			`DELETE FROM monthly_network WHERE year_month < strftime('%Y-%m', 'now', ?)`,
-			"-"+itoa(retentionMonths)+" months",
-		); err != nil {
+		cutoff := now.AddDate(0, -retentionMonths, 0).Format("2006-01")
+		if _, err := s.db.Exec(`DELETE FROM monthly_network WHERE year_month < ?`, cutoff); err != nil {
 			return err
 		}
 	}
@@ -417,26 +430,70 @@ func (s *DB) CleanOldAlerts(retentionDays int) error {
 	return nil
 }
 
-func (s *DB) SaveDailyMetrics(avgCPU, maxCPU, avgMem, maxMem, avgDisk, maxDisk float64, sampleCount int, loc *time.Location) error {
+func (s *DB) SaveDailyMetrics(hm collector.HourlyMetrics, loc *time.Location) error {
 	if loc == nil {
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
 	date := now.Format("2006-01-02")
 
+	sampleCount := hm.SampleCount
+	if sampleCount <= 0 {
+		sampleCount = hm.CPUSamples
+		if hm.MemSamples > sampleCount {
+			sampleCount = hm.MemSamples
+		}
+		if hm.DiskSamples > sampleCount {
+			sampleCount = hm.DiskSamples
+		}
+	}
+
 	_, err := s.db.Exec(`
-		INSERT INTO daily_metrics (date, avg_cpu, max_cpu, avg_memory, max_memory, avg_disk, max_disk, sample_count, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO daily_metrics (
+			date, avg_cpu, max_cpu, avg_memory, max_memory, avg_disk, max_disk,
+			sample_count, cpu_samples, memory_samples, disk_samples, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(date) DO UPDATE SET
-			avg_cpu = (daily_metrics.avg_cpu * daily_metrics.sample_count + excluded.avg_cpu * excluded.sample_count) / (daily_metrics.sample_count + excluded.sample_count),
-			max_cpu = MAX(daily_metrics.max_cpu, excluded.max_cpu),
-			avg_memory = (daily_metrics.avg_memory * daily_metrics.sample_count + excluded.avg_memory * excluded.sample_count) / (daily_metrics.sample_count + excluded.sample_count),
-			max_memory = MAX(daily_metrics.max_memory, excluded.max_memory),
-			avg_disk = (daily_metrics.avg_disk * daily_metrics.sample_count + excluded.avg_disk * excluded.sample_count) / (daily_metrics.sample_count + excluded.sample_count),
-			max_disk = MAX(daily_metrics.max_disk, excluded.max_disk),
+			avg_cpu = CASE
+				WHEN excluded.cpu_samples > 0 AND daily_metrics.cpu_samples > 0 THEN
+					(daily_metrics.avg_cpu * daily_metrics.cpu_samples + excluded.avg_cpu * excluded.cpu_samples)
+					/ (daily_metrics.cpu_samples + excluded.cpu_samples)
+				WHEN excluded.cpu_samples > 0 THEN excluded.avg_cpu
+				ELSE daily_metrics.avg_cpu
+			END,
+			max_cpu = CASE
+				WHEN excluded.cpu_samples > 0 THEN MAX(daily_metrics.max_cpu, excluded.max_cpu)
+				ELSE daily_metrics.max_cpu
+			END,
+			avg_memory = CASE
+				WHEN excluded.memory_samples > 0 AND daily_metrics.memory_samples > 0 THEN
+					(daily_metrics.avg_memory * daily_metrics.memory_samples + excluded.avg_memory * excluded.memory_samples)
+					/ (daily_metrics.memory_samples + excluded.memory_samples)
+				WHEN excluded.memory_samples > 0 THEN excluded.avg_memory
+				ELSE daily_metrics.avg_memory
+			END,
+			max_memory = CASE
+				WHEN excluded.memory_samples > 0 THEN MAX(daily_metrics.max_memory, excluded.max_memory)
+				ELSE daily_metrics.max_memory
+			END,
+			avg_disk = CASE
+				WHEN excluded.disk_samples > 0 AND daily_metrics.disk_samples > 0 THEN
+					(daily_metrics.avg_disk * daily_metrics.disk_samples + excluded.avg_disk * excluded.disk_samples)
+					/ (daily_metrics.disk_samples + excluded.disk_samples)
+				WHEN excluded.disk_samples > 0 THEN excluded.avg_disk
+				ELSE daily_metrics.avg_disk
+			END,
+			max_disk = CASE
+				WHEN excluded.disk_samples > 0 THEN MAX(daily_metrics.max_disk, excluded.max_disk)
+				ELSE daily_metrics.max_disk
+			END,
+			cpu_samples = daily_metrics.cpu_samples + excluded.cpu_samples,
+			memory_samples = daily_metrics.memory_samples + excluded.memory_samples,
+			disk_samples = daily_metrics.disk_samples + excluded.disk_samples,
 			sample_count = daily_metrics.sample_count + excluded.sample_count,
 			created_at = excluded.created_at
-	`, date, avgCPU, maxCPU, avgMem, maxMem, avgDisk, maxDisk, sampleCount, now.Unix())
+	`, date, hm.AvgCPU, hm.MaxCPU, hm.AvgMemory, hm.MaxMemory, hm.AvgDisk, hm.MaxDisk,
+		sampleCount, hm.CPUSamples, hm.MemSamples, hm.DiskSamples, now.Unix())
 	return err
 }
 
@@ -464,15 +521,16 @@ func (s *DB) GetDailyMetrics(startDate, endDate string, limit int) ([]DailyMetri
 	return result, rows.Err()
 }
 
-func (s *DB) CleanOldMetrics(retentionDays int) error {
-	if retentionDays > 0 {
-		_, err := s.db.Exec(
-			`DELETE FROM daily_metrics WHERE date < date('now', ?)`,
-			"-"+itoa(retentionDays)+" days",
-		)
-		return err
+func (s *DB) CleanOldMetrics(retentionDays int, loc *time.Location) error {
+	if retentionDays <= 0 {
+		return nil
 	}
-	return nil
+	if loc == nil {
+		loc = time.UTC
+	}
+	cutoff := time.Now().In(loc).AddDate(0, 0, -retentionDays).Format("2006-01-02")
+	_, err := s.db.Exec(`DELETE FROM daily_metrics WHERE date < ?`, cutoff)
+	return err
 }
 
 func (s *DB) runHourlyTasks(cfg *config.Config) {
@@ -489,8 +547,8 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 
 	// Save hourly metrics aggregation
 	hm := collector.GetHourlyMetricsAndReset()
-	if hm.SampleCount > 0 {
-		if err := s.SaveDailyMetrics(hm.AvgCPU, hm.MaxCPU, hm.AvgMemory, hm.MaxMemory, hm.AvgDisk, hm.MaxDisk, hm.SampleCount, loc); err != nil {
+	if hm.CPUSamples > 0 || hm.MemSamples > 0 || hm.DiskSamples > 0 {
+		if err := s.SaveDailyMetrics(hm, loc); err != nil {
 			log.Println("保存每日指标数据失败:", err)
 		}
 	}
@@ -510,7 +568,7 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 	}
 
 	if retentionDays > 0 || retentionMonths > 0 {
-		if err := s.CleanOldData(retentionDays, retentionMonths); err != nil {
+		if err := s.CleanOldData(retentionDays, retentionMonths, loc); err != nil {
 			log.Println("清理历史数据失败:", err)
 		} else {
 			log.Printf("已清理 %d 天/%d 月以前的网络流量数据", retentionDays, retentionMonths)
@@ -528,7 +586,7 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 
 	// Clean old metrics with specific retention days
 	if metricsRetentionDays > 0 {
-		if err := s.CleanOldMetrics(metricsRetentionDays); err != nil {
+		if err := s.CleanOldMetrics(metricsRetentionDays, loc); err != nil {
 			log.Println("清理指标历史失败:", err)
 		} else {
 			log.Printf("已清理 %d 天以前的指标历史", metricsRetentionDays)
@@ -536,29 +594,10 @@ func (s *DB) runHourlyTasks(cfg *config.Config) {
 	}
 }
 
+// nextHour returns the next wall-clock hour boundary in now's location.
 func nextHour(now time.Time) time.Time {
-	return now.Truncate(time.Hour).Add(time.Hour)
+	t := now.In(now.Location())
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, t.Location()).Add(time.Hour)
 }
 
-// itoa is a small allocation-free helper for building SQLite date modifiers.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
+
