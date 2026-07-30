@@ -358,15 +358,15 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 			c.SMTP.Pass = v
 		}
 		if toSlice, ok := smtp["to"].([]interface{}); ok {
-			var to []string
+			// Respect an explicitly-provided list, including an empty one
+			// (clears recipients). An absent "to" key leaves To unchanged.
+			to := make([]string, 0, len(toSlice))
 			for _, item := range toSlice {
 				if s, ok := item.(string); ok {
 					to = append(to, s)
 				}
 			}
-			if len(to) > 0 {
-				c.SMTP.To = to
-			}
+			c.SMTP.To = to
 		}
 	}
 

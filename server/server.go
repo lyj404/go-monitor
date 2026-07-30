@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,7 @@ type Server struct {
 	loginLimits     map[string]*loginAttempt
 	limitMu         sync.Mutex
 	done            chan struct{}
+	cleanupWg       sync.WaitGroup
 	indexHTMLBytes  []byte
 	loginHTMLBytes  []byte
 	configHTMLBytes []byte
@@ -66,6 +68,7 @@ func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Serv
 		loginHTMLBytes:  loginHTMLBytes,
 		configHTMLBytes: configHTMLBytes,
 	}
+	s.cleanupWg.Add(1)
 	go s.cleanupStale()
 	return s
 }
@@ -76,6 +79,10 @@ func (s *Server) Close() {
 		return
 	default:
 		close(s.done)
+		// Wait for cleanupStale to exit so its goroutine does not outlive
+		// Close (e.g. touch sessMu/limitMu after the rest of the process
+		// has torn down). It returns promptly because done is now closed.
+		s.cleanupWg.Wait()
 	}
 }
 
@@ -89,6 +96,8 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) cleanupStale() {
+	defer s.cleanupWg.Done()
+
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
@@ -281,7 +290,11 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Username == cfg.Auth.Username && req.Password == cfg.Auth.Password {
+	// Constant-time comparison to avoid leaking username/password length or
+	// prefix information via timing side-channels.
+	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(cfg.Auth.Username)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(cfg.Auth.Password)) == 1
+	if userOK && passOK {
 		s.limitMu.Lock()
 		if cur, ok := s.loginLimits[ip]; ok {
 			cur.count = 0

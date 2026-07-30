@@ -22,7 +22,11 @@ const (
 	defaultQueueSize   = 32
 	defaultWorkers     = 2
 	stateTTL           = 24 * time.Hour
-	closeTimeout       = 5 * time.Second
+	// closeTimeout must comfortably exceed a single SMTP delivery so an
+	// in-flight worker is not abandoned mid-send during shutdown. Sized to
+	// smtpOverallTimeout plus headroom so the two stay coupled if SMTP
+	// timeouts are tuned later.
+	closeTimeout = smtpOverallTimeout + 5*time.Second
 )
 
 type emailJob struct {

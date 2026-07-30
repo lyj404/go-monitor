@@ -32,8 +32,22 @@ var (
 )
 
 func init() {
+	InitDiskIO()
+}
+
+// InitDiskIO resets the disk-IO collector's package-level state. Called from
+// init() and NewCollector so repeated collector construction (e.g. in tests)
+// starts from a clean baseline rather than stale counters from a prior run.
+func InitDiskIO() {
+	diskIOMu.Lock()
 	lastDiskStats = make(map[string]diskCounter)
+	lastDiskSampled = time.Time{}
+	diskIOMu.Unlock()
+
+	physicalDiskMu.Lock()
 	physicalDiskCache = make(map[string]bool)
+	physicalDiskRef = time.Time{}
+	physicalDiskMu.Unlock()
 }
 
 func scanPhysicalDisks() map[string]bool {

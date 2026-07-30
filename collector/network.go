@@ -525,22 +525,27 @@ func CollectNetwork() (*Network, error) {
 		return n, nil
 	}
 
+	// Hold classifierMu.RLock across the counter read so the classifier
+	// backend (and the nftables netlink state it owns) cannot be torn down
+	// concurrently by EnableLanWanSplit/DisableLanWanSplit from an HTTP
+	// config-reload goroutine. Without this, readNftablesCountersNetlink
+	// would race on the package-level nftState pointer.
 	classifierMu.RLock()
 	cl := classifier
-	classifierMu.RUnlock()
-
 	var lanRcv, lanSnd, wanRcv, wanSnd int64
 	var readErr error
+	classified := true
 	switch cl {
 	case classifierNftables:
 		lanRcv, lanSnd, wanRcv, wanSnd, readErr = readNftablesCounters()
 	case classifierIptables:
 		lanRcv, lanSnd, wanRcv, wanSnd, readErr = readIptablesCounters()
 	default:
-		return n, nil
+		classified = false
 	}
+	classifierMu.RUnlock()
 
-	if readErr != nil {
+	if !classified || readErr != nil {
 		return n, nil
 	}
 

@@ -46,6 +46,7 @@ type Collector struct {
 
 func NewCollector(cfg *config.Config, alerter Alerter) *Collector {
 	InitNetwork()
+	InitDiskIO()
 	c := &Collector{
 		cfg:      cfg,
 		alerter:  alerter,

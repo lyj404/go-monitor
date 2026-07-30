@@ -490,7 +490,17 @@ func (s *DB) SaveDailyMetrics(hm collector.HourlyMetrics, loc *time.Location) er
 			cpu_samples = daily_metrics.cpu_samples + excluded.cpu_samples,
 			memory_samples = daily_metrics.memory_samples + excluded.memory_samples,
 			disk_samples = daily_metrics.disk_samples + excluded.disk_samples,
-			sample_count = daily_metrics.sample_count + excluded.sample_count,
+			-- sample_count tracks how many collection cycles contributed to
+			-- this day. Each metric type keeps its own count (a type with a
+			-- failed/nil collector accrues fewer), so derive sample_count as
+			-- the largest per-type count rather than summing a meaningless
+			-- running max. Matches the INSERT-time value (max of the three
+			-- hourly per-type samples).
+			sample_count = MAX(
+				daily_metrics.cpu_samples,
+				daily_metrics.memory_samples,
+				daily_metrics.disk_samples
+			),
 			created_at = excluded.created_at
 	`, date, hm.AvgCPU, hm.MaxCPU, hm.AvgMemory, hm.MaxMemory, hm.AvgDisk, hm.MaxDisk,
 		sampleCount, hm.CPUSamples, hm.MemSamples, hm.DiskSamples, now.Unix())
