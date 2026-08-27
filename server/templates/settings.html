@@ -388,6 +388,12 @@
                 <input type="number" id="alert_disk_write_threshold" min="0" step="any">
                 <select id="alert_disk_write_unit"><option value="1048576" selected>MB</option><option value="1073741824">GB</option></select>
             </div>
+            <div class="threshold-row">
+                <span class="row-label">磁盘 IOPS 告警</span>
+                <label class="switch"><input type="checkbox" id="alert_disk_iops"><span class="slider"></span></label>
+                <input type="number" id="alert_disk_iops_threshold" min="0" step="1">
+                <span class="unit-label">次/秒</span>
+            </div>
 <div class="field" style="margin-top:16px">
                 <label>告警持续时间（秒）</label>
                 <input type="number" id="alert_duration" min="0">
@@ -505,6 +511,9 @@
                 document.getElementById('alert_disk_write_threshold').value = writeH.value;
                 document.getElementById('alert_disk_write_unit').value = writeH.unit;
 
+                document.getElementById('alert_disk_iops').checked = cfg.alert.disk_iops || false;
+                document.getElementById('alert_disk_iops_threshold').value = cfg.alert.disk_iops_threshold || 0;
+
                 document.getElementById('alert_interval').value = cfg.alert.interval || 300;
                 document.getElementById('alert_duration').value = cfg.alert.duration || 0;
                 document.getElementById('alert_retention_days').value = cfg.alert.retention_days || 30;
@@ -561,6 +570,8 @@
                     disk_read_threshold: humanToBytes(document.getElementById('alert_disk_read_threshold').value, document.getElementById('alert_disk_read_unit').value),
                     disk_write: document.getElementById('alert_disk_write').checked,
                     disk_write_threshold: humanToBytes(document.getElementById('alert_disk_write_threshold').value, document.getElementById('alert_disk_write_unit').value),
+                    disk_iops: document.getElementById('alert_disk_iops').checked,
+                    disk_iops_threshold: parseInt(document.getElementById('alert_disk_iops_threshold').value) || 0,
                     interval: parseInt(document.getElementById('alert_interval').value) || 300,
                     duration: parseInt(document.getElementById('alert_duration').value) || 0,
                     retention_days: parseInt(document.getElementById('alert_retention_days').value) || 30,

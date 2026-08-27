@@ -10,15 +10,19 @@ import (
 	"time"
 )
 
-// DiskIO reports aggregated read/write rates in bytes/sec.
+// DiskIO reports aggregated read/write rates in bytes/sec and IOPS.
 type DiskIO struct {
 	ReadBytes  int64 `json:"read"`
 	WriteBytes int64 `json:"write"`
+	ReadIOPS   int64 `json:"read_iops"`
+	WriteIOPS  int64 `json:"write_iops"`
 }
 
 type diskCounter struct {
-	read  int64
-	write int64
+	read     int64
+	write    int64
+	readOps  int64
+	writeOps int64
 }
 
 var (
@@ -81,6 +85,7 @@ func CollectDiskIO() (*DiskIO, error) {
 	defer f.Close()
 
 	var deltaRead, deltaWrite int64
+	var deltaReadOps, deltaWriteOps int64
 	var counterRegressed bool
 	var regressedDisk string
 
@@ -103,13 +108,16 @@ func CollectDiskIO() (*DiskIO, error) {
 
 		readSectors, _ := strconv.ParseInt(fields[5], 10, 64)
 		writeSectors, _ := strconv.ParseInt(fields[9], 10, 64)
+		readOps, _ := strconv.ParseInt(fields[3], 10, 64)
+		writeOps, _ := strconv.ParseInt(fields[7], 10, 64)
 
 		readBytes := readSectors * 512
 		writeBytes := writeSectors * 512
 
 		last, exists := lastDiskStats[name]
 		if exists {
-			if readBytes < last.read || writeBytes < last.write {
+			if readBytes < last.read || writeBytes < last.write ||
+				readOps < last.readOps || writeOps < last.writeOps {
 				counterRegressed = true
 				if regressedDisk == "" {
 					regressedDisk = name
@@ -117,12 +125,16 @@ func CollectDiskIO() (*DiskIO, error) {
 			} else {
 				deltaRead += readBytes - last.read
 				deltaWrite += writeBytes - last.write
+				deltaReadOps += readOps - last.readOps
+				deltaWriteOps += writeOps - last.writeOps
 			}
 		}
 
 		lastDiskStats[name] = diskCounter{
-			read:  readBytes,
-			write: writeBytes,
+			read:     readBytes,
+			write:    writeBytes,
+			readOps:  readOps,
+			writeOps: writeOps,
 		}
 	}
 
@@ -133,12 +145,15 @@ func CollectDiskIO() (*DiskIO, error) {
 	}
 
 	var rateR, rateW int64
+	var iopsR, iopsW int64
 	if !lastDiskSampled.IsZero() {
 		elapsed := now.Sub(lastDiskSampled).Seconds()
 		const maxElapsedSeconds = 600.0
 		if elapsed > 0 && elapsed <= maxElapsedSeconds {
 			rateR = int64(float64(deltaRead) / elapsed)
 			rateW = int64(float64(deltaWrite) / elapsed)
+			iopsR = int64(float64(deltaReadOps) / elapsed)
+			iopsW = int64(float64(deltaWriteOps) / elapsed)
 		} else if elapsed > maxElapsedSeconds {
 			log.Printf("磁盘 IO 采集间隔异常 (%.1fs)，跳过本轮速率计算", elapsed)
 		}
@@ -148,5 +163,7 @@ func CollectDiskIO() (*DiskIO, error) {
 	return &DiskIO{
 		ReadBytes:  rateR,
 		WriteBytes: rateW,
+		ReadIOPS:   iopsR,
+		WriteIOPS:  iopsW,
 	}, nil
 }

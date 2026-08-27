@@ -174,6 +174,15 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 				}
 			}
 		}
+		if cfg.Alert.DiskIOPS {
+			totalIOPS := m.DiskIO.ReadIOPS + m.DiskIO.WriteIOPS
+			if a.shouldFire("disk_iops", totalIOPS >= cfg.Alert.DiskIOPSThreshold, duration) {
+				msg := fmt.Sprintf("磁盘 IOPS %d (读 %d / 写 %d) 超过阈值 %d", totalIOPS, m.DiskIO.ReadIOPS, m.DiskIO.WriteIOPS, cfg.Alert.DiskIOPSThreshold)
+				if a.send("磁盘IOPS", msg, cfg) {
+					a.notifyAlert("磁盘IOPS", msg, fmt.Sprintf("%d", totalIOPS), fmt.Sprintf("%d", cfg.Alert.DiskIOPSThreshold))
+				}
+			}
+		}
 	}
 
 	if cfg.Alert.Process && m.Process != nil {

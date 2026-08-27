@@ -182,8 +182,8 @@
         .card-icon.disk-write svg { stroke: #fb923c; }
         .card-icon.self-mem { background: rgba(96, 165, 250, 0.15); }
         .card-icon.self-mem svg { stroke: #60a5fa; }
-        .card-icon.loadavg { background: rgba(244, 114, 182, 0.15); }
-        .card-icon.loadavg svg { stroke: #f472b6; }
+        .card-icon.iops { background: rgba(244, 114, 182, 0.15); }
+        .card-icon.iops svg { stroke: #f472b6; }
         .card-icon.process { background: rgba(45, 212, 191, 0.15); }
         .card-icon.process svg { stroke: #2dd4bf; }
         .card-icon.uptime { background: rgba(129, 140, 248, 0.15); }
@@ -448,16 +448,16 @@
 
             <div class="card">
                 <div class="card-header">
-                    <span class="card-title">系统负载</span>
-                    <div class="card-icon loadavg">
+                    <span class="card-title">磁盘 IOPS</span>
+                    <div class="card-icon iops">
                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            <path d="M12 20h9"/>
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                         </svg>
                     </div>
                 </div>
-                <div class="value" id="loadAvg1">--</div>
-                <div class="detail" id="loadAvgDetail">1 / 5 / 15 分钟</div>
-                <div class="progress"><div class="progress-bar" id="loadAvgBar" style="width:0%"></div></div>
+                <div class="value" id="diskIOPS">--</div>
+                <div class="detail" id="diskIOPSDetail">读 -- · 写 -- 次/秒</div>
             </div>
 
             <div class="card">
@@ -657,6 +657,9 @@
                 if (data.disk_io) {
                     document.getElementById('diskRead').textContent = formatBytes(data.disk_io.read);
                     document.getElementById('diskWrite').textContent = formatBytes(data.disk_io.write);
+                    document.getElementById('diskIOPS').textContent = data.disk_io.read_iops + data.disk_io.write_iops;
+                    document.getElementById('diskIOPSDetail').textContent =
+                        '读 ' + data.disk_io.read_iops + ' · 写 ' + data.disk_io.write_iops + ' 次/秒';
                     if (data.interval) {
                         var diskUnitText = '字节/' + data.interval + '秒';
                         document.getElementById('diskReadUnit').textContent = diskUnitText;
@@ -666,18 +669,6 @@
 
                 if (data.self_mem) {
                     document.getElementById('selfMem').textContent = formatBytes(data.self_mem.rss * 1024);
-                }
-
-                if (data.loadavg) {
-                    var cores = data.loadavg.cores || 1;
-                    var loadPct = (data.loadavg.load1 / cores * 100);
-                    document.getElementById('loadAvg1').textContent = loadPct.toFixed(0) + '%';
-                    document.getElementById('loadAvgDetail').textContent =
-                        data.loadavg.load1.toFixed(2) + ' / ' + data.loadavg.load5.toFixed(2) + ' / ' + data.loadavg.load15.toFixed(2) +
-                        ' (' + cores + '核)';
-                    var bar = document.getElementById('loadAvgBar');
-                    bar.style.width = Math.min(loadPct, 100) + '%';
-                    bar.className = 'progress-bar ' + getProgressColor(loadPct);
                 }
 
                 if (data.process) {

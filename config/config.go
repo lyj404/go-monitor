@@ -89,6 +89,8 @@ type AlertConfig struct {
 	DiskReadThreshold      int64   `yaml:"disk_read_threshold"`
 	DiskWrite              bool    `yaml:"disk_write"`
 	DiskWriteThreshold     int64   `yaml:"disk_write_threshold"`
+	DiskIOPS               bool    `yaml:"disk_iops"`
+	DiskIOPSThreshold      int64   `yaml:"disk_iops_threshold"`
 	Interval               int     `yaml:"interval"`
 	RetentionDays          int     `yaml:"retention_days"`
 	MonthlyRetentionMonths int     `yaml:"monthly_retention_months"`
@@ -217,6 +219,8 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"disk_read_threshold":      c.data.Alert.DiskReadThreshold,
 			"disk_write":               c.data.Alert.DiskWrite,
 			"disk_write_threshold":     c.data.Alert.DiskWriteThreshold,
+			"disk_iops":                c.data.Alert.DiskIOPS,
+			"disk_iops_threshold":      c.data.Alert.DiskIOPSThreshold,
 			"interval":                 c.data.Alert.Interval,
 			"duration":                 c.data.Alert.Duration,
 			"retention_days":           c.data.Alert.RetentionDays,
@@ -415,6 +419,12 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		}
 		if v, ok := alert["disk_write_threshold"].(float64); ok {
 			c.Alert.DiskWriteThreshold = int64(v)
+		}
+		if v, ok := alert["disk_iops"].(bool); ok {
+			c.Alert.DiskIOPS = v
+		}
+		if v, ok := alert["disk_iops_threshold"].(float64); ok {
+			c.Alert.DiskIOPSThreshold = int64(v)
 		}
 		if v, ok := alert["interval"].(float64); ok && v > 0 {
 			c.Alert.Interval = int(v)

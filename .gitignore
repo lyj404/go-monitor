@@ -4,3 +4,4 @@ config.yaml
 *.exe
 .opencode/
 .claude/
+.codegraph/

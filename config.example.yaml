@@ -52,6 +52,9 @@ alert:
   disk_read_threshold: 104857600
   disk_write: false
   disk_write_threshold: 104857600
+  # 磁盘 IOPS 告警: 读+写总每秒操作次数超过阈值时触发，单位 次/秒。
+  disk_iops: false
+  disk_iops_threshold: 1000
   interval: 600
   retention_days: 30
   monthly_retention_months: 12
