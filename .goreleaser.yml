@@ -36,6 +36,9 @@ nfpms:
         dst: lib/systemd/system/go-monitor.service
       - src: config.example.yaml
         dst: etc/go-monitor/config.yaml
+        # Mark as conffile so dpkg preserves user edits on upgrade: the
+        # new default lands in config.yaml.dpkg-dist instead of overwriting.
+        type: config
     scripts:
       postinstall: debian/postinst
       preremove: debian/prerm
