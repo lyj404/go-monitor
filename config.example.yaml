@@ -61,4 +61,8 @@ alert:
   interval: 600
   retention_days: 30
   monthly_retention_months: 12
+# update_check: 设置页"关于"区块的手动版本检查（对比 GitHub Releases 最新版）。
+# 省略此节时默认开启。
+update_check:
+  enabled: true
 

@@ -175,3 +175,63 @@ func TestDiskIOPSToggle(t *testing.T) {
 		t.Fatal("unrelated monitor fields must survive reload")
 	}
 }
+
+func TestUpdateCheckToggle(t *testing.T) {
+	t.Parallel()
+
+	// An absent key defaults to enabled so configs saved before the
+	// version check existed keep the feature on.
+	if !(UpdateCheckConfig{}).CheckEnabled() {
+		t.Fatal("absent update_check.enabled should default to enabled")
+	}
+	off := false
+	if (UpdateCheckConfig{Enabled: &off}).CheckEnabled() {
+		t.Fatal("explicit false should disable the check")
+	}
+	on := true
+	if !(UpdateCheckConfig{Enabled: &on}).CheckEnabled() {
+		t.Fatal("explicit true should enable the check")
+	}
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("monitor:\n  interval: 3\n"), 0644); err != nil {
+		t.Fatalf("write seed config: %v", err)
+	}
+	cfg := FromSnapshot(path, Snapshot{
+		Server:  ServerConfig{Port: 8080},
+		Monitor: MonitorConfig{Interval: 3},
+		Alert:   AlertConfig{Interval: 60},
+	})
+
+	updated := map[string]interface{}{
+		"update_check": map[string]interface{}{
+			"enabled": false,
+		},
+	}
+	if _, err := cfg.Reload(updated); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.Snapshot().Update.CheckEnabled() {
+		t.Fatal("reload should disable the update check")
+	}
+
+	// The disabled flag must be persisted to disk and survive a reload.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("reload from disk: %v", err)
+	}
+	_ = data
+	if reloaded.Snapshot().Update.CheckEnabled() {
+		t.Fatal("disabled state must persist to disk")
+	}
+
+	// MaskSensitive must expose the field or the settings page would
+	// render an absent checkbox and save-enabled-by-omission.
+	if _, ok := cfg.MaskSensitive()["update_check"]; !ok {
+		t.Fatal("MaskSensitive must include update_check")
+	}
+}

@@ -17,12 +17,25 @@ const maskPlaceholder = "****"
 // It contains no synchronization primitives, so it is safe to copy by value
 // and pass between goroutines.
 type Snapshot struct {
-	Name    string        `yaml:"name"`
-	Server  ServerConfig  `yaml:"server"`
-	Auth    AuthConfig    `yaml:"auth"`
-	Monitor MonitorConfig `yaml:"monitor"`
-	SMTP    SMTPConfig    `yaml:"smtp"`
-	Alert   AlertConfig   `yaml:"alert"`
+	Name    string            `yaml:"name"`
+	Server  ServerConfig      `yaml:"server"`
+	Auth    AuthConfig        `yaml:"auth"`
+	Monitor MonitorConfig     `yaml:"monitor"`
+	SMTP    SMTPConfig        `yaml:"smtp"`
+	Alert   AlertConfig       `yaml:"alert"`
+	Update  UpdateCheckConfig `yaml:"update_check"`
+}
+
+// UpdateCheckConfig controls the manual version check against GitHub
+// Releases. Enabled is a *bool so an absent key can default to enabled:
+// config files saved before the version check existed do not contain it.
+type UpdateCheckConfig struct {
+	Enabled *bool `yaml:"enabled"`
+}
+
+// CheckEnabled reports whether the version check feature is on.
+func (u UpdateCheckConfig) CheckEnabled() bool {
+	return u.Enabled == nil || *u.Enabled
 }
 
 // Config is the mutable holder for the live configuration. It owns the
@@ -244,6 +257,9 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"close_wait":               c.data.Alert.CloseWait,
 			"close_wait_threshold":     c.data.Alert.CloseWaitThreshold,
 		},
+		"update_check": map[string]interface{}{
+			"enabled": c.data.Update.CheckEnabled(),
+		},
 	}
 }
 
@@ -290,6 +306,10 @@ func cloneSnapshot(s Snapshot) Snapshot {
 	if s.Monitor.DiskIOPS != nil {
 		v := *s.Monitor.DiskIOPS
 		out.Monitor.DiskIOPS = &v
+	}
+	if s.Update.Enabled != nil {
+		v := *s.Update.Enabled
+		out.Update.Enabled = &v
 	}
 	return out
 }
@@ -478,6 +498,12 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		}
 		if v, ok := alert["close_wait_threshold"].(float64); ok {
 			c.Alert.CloseWaitThreshold = int(v)
+		}
+	}
+
+	if upd, ok := updated["update_check"].(map[string]interface{}); ok {
+		if v, ok := upd["enabled"].(bool); ok {
+			c.Update.Enabled = &v
 		}
 	}
 }

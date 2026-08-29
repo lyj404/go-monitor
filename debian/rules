@@ -4,7 +4,7 @@
 	dh $@
 
 override_dh_auto_build:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/go-monitor .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X github.com/lyj404/go-monitor/version.Current=v$$(dpkg-parsechangelog -S Version)" -o build/go-monitor .
 
 override_dh_auto_install:
 	install -D -m 755 build/go-monitor debian/go-monitor/usr/bin/go-monitor

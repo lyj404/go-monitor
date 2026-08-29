@@ -44,6 +44,9 @@ type Server struct {
 	configJSONMu    sync.RWMutex
 	configJSONBytes []byte
 	configJSONGen   uint64
+
+	verState   versionState
+	verCheckMu sync.Mutex
 }
 
 type sessionInfo struct {

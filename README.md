@@ -49,7 +49,7 @@ sudo systemctl start go-monitor
 ```bash
 git clone https://github.com/lyj404/go-monitor.git
 cd go-monitor
-go build -o go-monitor
+go build -ldflags="-X github.com/lyj404/go-monitor/version.Current=v1.0.0" -o go-monitor
 ```
 
 ## 配置
