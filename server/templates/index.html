@@ -366,7 +366,7 @@
                     </div>
                 </div>
                 <div class="value" id="netUpload">--</div>
-                <div class="detail" id="netUploadUnit">字节/3秒</div>
+                <div class="detail" id="netUploadUnit">字节/秒</div>
                 <div class="detail" id="netUploadDetail" style="font-size:12px;color:var(--text-muted);margin-top:2px"></div>
             </div>
             
@@ -381,7 +381,7 @@
                     </div>
                 </div>
                 <div class="value" id="netDownload">--</div>
-                <div class="detail" id="netDownloadUnit">字节/3秒</div>
+                <div class="detail" id="netDownloadUnit">字节/秒</div>
                 <div class="detail" id="netDownloadDetail" style="font-size:12px;color:var(--text-muted);margin-top:2px"></div>
             </div>
             
@@ -428,7 +428,7 @@
                     </div>
                 </div>
                 <div class="value" id="diskRead">--</div>
-                <div class="detail" id="diskReadUnit">字节/3秒</div>
+                <div class="detail" id="diskReadUnit">字节/秒</div>
             </div>
             
             <div class="card">
@@ -443,7 +443,7 @@
                     </div>
                 </div>
                 <div class="value" id="diskWrite">--</div>
-                <div class="detail" id="diskWriteUnit">字节/3秒</div>
+                <div class="detail" id="diskWriteUnit">字节/秒</div>
             </div>
 
             <div class="card">
@@ -607,7 +607,15 @@
             try {
                 const resp = await fetch('/api/metrics');
                 const data = await resp.json();
-                
+
+                // Re-align the polling interval with the collector's
+                // configured interval so the dashboard does not hammer
+                // the API faster than data actually changes.
+                if (data.interval > 0 && data.interval !== pollSeconds) {
+                    pollSeconds = data.interval;
+                    scheduleMetrics();
+                }
+
                 if (data.memory) {
                     const mem = data.memory;
                     const memUsage = mem.usage.toFixed(1);
@@ -616,24 +624,26 @@
                     const bar = document.getElementById('memBar');
                     bar.style.width = mem.usage + '%';
                     bar.className = 'progress-bar ' + getProgressColor(mem.usage);
+                } else {
+                    document.getElementById('memUsage').textContent = '--%';
+                    document.getElementById('memDetail').textContent = '-- / -- GB';
+                    document.getElementById('memBar').style.width = '0%';
                 }
-                
+
                 if (data.cpu) {
                     const cpuUsage = data.cpu.usage.toFixed(1);
                     document.getElementById('cpuUsage').textContent = cpuUsage + '%';
                     const bar = document.getElementById('cpuBar');
                     bar.style.width = data.cpu.usage + '%';
                     bar.className = 'progress-bar ' + getProgressColor(data.cpu.usage);
+                } else {
+                    document.getElementById('cpuUsage').textContent = '--%';
+                    document.getElementById('cpuBar').style.width = '0%';
                 }
-                
+
                 if (data.network) {
                     document.getElementById('netUpload').textContent = formatBytes(data.network.upload);
                     document.getElementById('netDownload').textContent = formatBytes(data.network.download);
-                    if (data.interval) {
-                        var unitText = '字节/' + data.interval + '秒';
-                        document.getElementById('netUploadUnit').textContent = unitText;
-                        document.getElementById('netDownloadUnit').textContent = unitText;
-                    }
                     if (data.network.lan_upload !== undefined) {
                         document.getElementById('netUploadDetail').textContent =
                             '内网 ' + formatBytes(data.network.lan_upload) +
@@ -642,8 +652,13 @@
                             '内网 ' + formatBytes(data.network.lan_download) +
                             ' · 公网 ' + formatBytes(data.network.wan_download);
                     }
+                } else {
+                    document.getElementById('netUpload').textContent = '--';
+                    document.getElementById('netDownload').textContent = '--';
+                    document.getElementById('netUploadDetail').textContent = '';
+                    document.getElementById('netDownloadDetail').textContent = '';
                 }
-                
+
                 if (data.disk) {
                     const disk = data.disk;
                     const diskUsage = disk.usage.toFixed(1);
@@ -652,6 +667,10 @@
                     const bar = document.getElementById('diskBar');
                     bar.style.width = disk.usage + '%';
                     bar.className = 'progress-bar ' + getProgressColor(disk.usage);
+                } else {
+                    document.getElementById('diskUsage').textContent = '--%';
+                    document.getElementById('diskDetail').textContent = '-- / -- GB';
+                    document.getElementById('diskBar').style.width = '0%';
                 }
 
                 if (data.disk_io) {
@@ -660,19 +679,23 @@
                     document.getElementById('diskIOPS').textContent = data.disk_io.read_iops + data.disk_io.write_iops;
                     document.getElementById('diskIOPSDetail').textContent =
                         '读 ' + data.disk_io.read_iops + ' · 写 ' + data.disk_io.write_iops + ' 次/秒';
-                    if (data.interval) {
-                        var diskUnitText = '字节/' + data.interval + '秒';
-                        document.getElementById('diskReadUnit').textContent = diskUnitText;
-                        document.getElementById('diskWriteUnit').textContent = diskUnitText;
-                    }
+                } else {
+                    document.getElementById('diskRead').textContent = '--';
+                    document.getElementById('diskWrite').textContent = '--';
+                    document.getElementById('diskIOPS').textContent = '--';
+                    document.getElementById('diskIOPSDetail').textContent = '读 -- · 写 -- 次/秒';
                 }
 
                 if (data.self_mem) {
                     document.getElementById('selfMem').textContent = formatBytes(data.self_mem.rss * 1024);
+                } else {
+                    document.getElementById('selfMem').textContent = '--';
                 }
 
                 if (data.process) {
                     document.getElementById('processCount').textContent = data.process.count;
+                } else {
+                    document.getElementById('processCount').textContent = '--';
                 }
 
                 if (data.uptime) {
@@ -685,6 +708,8 @@
                     if (hours > 0) parts.push(hours + '时');
                     parts.push(mins + '分');
                     document.getElementById('uptime').textContent = parts.join(' ');
+                } else {
+                    document.getElementById('uptime').textContent = '--';
                 }
 
                 if (data.tcpstat) {
@@ -693,6 +718,9 @@
                         'ESTABLISHED · TIME_WAIT ' + data.tcpstat.time_wait +
                         ' · CLOSE_WAIT ' + data.tcpstat.close_wait +
                         ' · LISTEN ' + data.tcpstat.listen;
+                } else {
+                    document.getElementById('tcpEstablished').textContent = '--';
+                    document.getElementById('tcpDetail').textContent = 'ESTABLISHED';
                 }
 
                 if (data.cpu_temp) {
@@ -741,15 +769,23 @@
                 const resp = await fetch('/api/history/alerts?limit=20');
                 const alerts = await resp.json();
                 if (alerts && alerts.length > 0) {
-                    document.getElementById('alertTable').innerHTML = alerts.map(function(a) {
+                    var tbody = document.getElementById('alertTable');
+                    tbody.innerHTML = '';
+                    alerts.forEach(function(a) {
                         var d = new Date(a.created_at * 1000);
                         var time = d.getFullYear() + '-' +
                             String(d.getMonth()+1).padStart(2,'0') + '-' +
                             String(d.getDate()).padStart(2,'0') + ' ' +
                             String(d.getHours()).padStart(2,'0') + ':' +
                             String(d.getMinutes()).padStart(2,'0');
-                        return '<tr><td>'+time+'</td><td>'+a.alert_type+'</td><td>'+a.message+'</td></tr>';
-                    }).join('');
+                        var tr = document.createElement('tr');
+                        [time, a.alert_type, a.message].forEach(function(v) {
+                            var td = document.createElement('td');
+                            td.textContent = v == null ? '--' : v;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
                 }
             } catch(e) { console.error(e); }
         }
@@ -781,18 +817,28 @@
                 String(d.getMinutes()).padStart(2,'0');
         }
 
+        // Poll at the collector's configured interval (reported by
+        // /api/metrics as data.interval); fall back to 3s until the first
+        // response arrives.
+        var pollSeconds = 3;
+        var metricsInterval = null;
+        function scheduleMetrics() {
+            if (metricsInterval) clearInterval(metricsInterval);
+            metricsInterval = setInterval(loadMetrics, pollSeconds * 1000);
+        }
+
         loadServerName();
         loadMetrics();
         loadHistory();
         loadAlertHistory();
         loadMetricsHistory();
-        var metricsInterval = setInterval(loadMetrics, (window._monitorInterval || 3) * 1000);
+        scheduleMetrics();
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
-                clearInterval(metricsInterval);
+                if (metricsInterval) clearInterval(metricsInterval);
             } else {
                 loadMetrics();
-                metricsInterval = setInterval(loadMetrics, (window._monitorInterval || 3) * 1000);
+                scheduleMetrics();
             }
         });
     </script>

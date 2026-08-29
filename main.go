@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -93,13 +94,20 @@ func main() {
 		db.StartHourlyTasks(ctx.Done(), cfg)
 	}
 
+	// Exit the shutdown path (instead of log.Fatal) so deferred cleanup and
+	// the explicit tear-down below still run.
+	serveErr := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("服务器启动失败:", err)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
 		}
 	}()
 
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case err := <-serveErr:
+		log.Println("服务器异常退出:", err)
+	}
 
 	log.Println("正在关闭服务...")
 
@@ -118,6 +126,11 @@ func main() {
 	col.Stop()
 	al.Close()
 	if db != nil {
+		// Flush traffic accumulated since the last hourly boundary so a
+		// restart does not lose up to an hour of network stats. Must run
+		// after col.Stop() so no goroutine mutates the totals concurrently.
+		up, down, lanUp, lanDown, wanUp, wanDown := collector.GetHourlyTotalsAndReset()
+		db.FlushNetworkTotals(up, down, lanUp, lanDown, wanUp, wanDown, cfg)
 		db.Close()
 	}
 	log.Println("服务已关闭")

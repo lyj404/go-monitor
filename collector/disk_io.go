@@ -61,7 +61,15 @@ func scanPhysicalDisks() map[string]bool {
 		return out
 	}
 	for _, entry := range entries {
-		out[entry.Name()] = true
+		name := entry.Name()
+		// Skip virtual devices: loop/ram are noise, and dm-* (LVM) / md*
+		// (RAID) layers duplicate the underlying disks already counted from
+		// /proc/diskstats, which would double both throughput and IOPS.
+		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") ||
+			strings.HasPrefix(name, "dm-") || strings.HasPrefix(name, "md") {
+			continue
+		}
+		out[name] = true
 	}
 	return out
 }

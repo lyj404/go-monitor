@@ -70,7 +70,7 @@ func CollectCPU() (*CPU, error) {
 	}
 
 	if cpuInitialized {
-		var totalDiff, idleDiff uint64
+		var totalDiff, idleDiff, iowaitDiff uint64
 		monotonic := true
 		for i := 0; i < n; i++ {
 			if curCPUStats[i] < lastCPUStats[i] {
@@ -86,10 +86,16 @@ func CollectCPU() (*CPU, error) {
 			if i == 3 {
 				idleDiff = diff
 			}
+			if i == 4 {
+				iowaitDiff = diff
+			}
 		}
 
+		// iowait is time waiting for IO, not time doing work — count it as
+		// idle so the usage figure matches top/htop. Older kernels may not
+		// report the iowait column; iowaitDiff stays 0 there.
 		if monotonic && totalDiff > 0 {
-			cpu.Usage = float64(totalDiff-idleDiff) / float64(totalDiff) * 100
+			cpu.Usage = float64(totalDiff-idleDiff-iowaitDiff) / float64(totalDiff) * 100
 		}
 	}
 

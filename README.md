@@ -20,6 +20,9 @@ Linux 系统轻量级资源监控工具，提供 Web 仪表盘和邮件告警功
 
 - Linux (Debian/Ubuntu 等)
 
+> 代码可以在 Windows 上编译，但除磁盘用量外所有采集器都依赖 `/proc` 与 `/sys`，
+> 在非 Linux 平台上仪表盘会显示 `--`，请部署在 Linux 上使用。
+
 ## 安装
 
 ### 从 Release 安装

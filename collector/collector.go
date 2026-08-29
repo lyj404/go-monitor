@@ -117,6 +117,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.Memory = mem
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集内存失败: %v", err)
 			}
 		}()
 	}
@@ -129,6 +131,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.CPU = cpu
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集CPU失败: %v", err)
 			}
 		}()
 	}
@@ -141,6 +145,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.Network = net
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集网络失败: %v", err)
 			}
 		}()
 	}
@@ -153,6 +159,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.Disk = disk
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集磁盘失败: %v", err)
 			}
 		}()
 	}
@@ -165,6 +173,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.DiskIO = dio
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集磁盘IO失败: %v", err)
 			}
 		}()
 	}
@@ -176,6 +186,8 @@ func (c *Collector) collect() {
 			mu.Lock()
 			m.SelfMem = selfMem
 			mu.Unlock()
+		} else if err != nil {
+			log.Printf("采集自身内存失败: %v", err)
 		}
 	}()
 
@@ -187,6 +199,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.Process = p
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集进程数失败: %v", err)
 			}
 		}()
 	}
@@ -199,6 +213,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.Uptime = u
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集运行时间失败: %v", err)
 			}
 		}()
 	}
@@ -211,6 +227,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.TCPStat = ts
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集TCP连接失败: %v", err)
 			}
 		}()
 	}
@@ -223,6 +241,8 @@ func (c *Collector) collect() {
 				mu.Lock()
 				m.CPUTemp = t
 				mu.Unlock()
+			} else if err != nil {
+				log.Printf("采集CPU温度失败: %v", err)
 			}
 		}()
 	}

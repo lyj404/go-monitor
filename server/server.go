@@ -34,6 +34,7 @@ type Server struct {
 	sessMu          sync.RWMutex
 	loginLimits     map[string]*loginAttempt
 	limitMu         sync.Mutex
+	closeOnce       sync.Once
 	done            chan struct{}
 	cleanupWg       sync.WaitGroup
 	indexHTMLBytes  []byte
@@ -74,16 +75,15 @@ func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Serv
 }
 
 func (s *Server) Close() {
-	select {
-	case <-s.done:
-		return
-	default:
+	// select/default + close is not atomic; a sync.Once guards against a
+	// double-close panic if Close is ever called from two goroutines.
+	s.closeOnce.Do(func() {
 		close(s.done)
 		// Wait for cleanupStale to exit so its goroutine does not outlive
 		// Close (e.g. touch sessMu/limitMu after the rest of the process
 		// has torn down). It returns promptly because done is now closed.
 		s.cleanupWg.Wait()
-	}
+	})
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
@@ -162,14 +162,15 @@ func (s *Server) evictSessionsLocked(now time.Time) {
 }
 
 // evictOldestLoginLimitLocked drops the loginLimits entry with the oldest
-// lastSeen so that a fresh IP can be tracked. Caller must hold s.limitMu.
+// lastSeen so that a fresh IP can be tracked. Locked entries are not special-
+// cased: if the map fills up with locked IPs (every unauthenticated request
+// creates an entry), skipping them would leave no victim and let the map grow
+// unbounded. Evicting an old locked entry is harmless — a returning attacker
+// simply starts a fresh attempt counter. Caller must hold s.limitMu.
 func (s *Server) evictOldestLoginLimitLocked() {
 	var victim string
 	var oldest time.Time
 	for ip, attempt := range s.loginLimits {
-		if !attempt.lockedUntil.IsZero() {
-			continue
-		}
 		if victim == "" || attempt.lastSeen.Before(oldest) {
 			victim = ip
 			oldest = attempt.lastSeen

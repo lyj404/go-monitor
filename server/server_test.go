@@ -133,3 +133,23 @@ func TestCloseIsIdempotent(t *testing.T) {
 	s.Close()
 	s.Close()
 }
+
+func TestEvictOldestLoginLimitAlwaysFreesSlot(t *testing.T) {
+	t.Parallel()
+
+	s := &Server{loginLimits: map[string]*loginAttempt{
+		"1.1.1.1": {count: 5, lockedUntil: time.Now().Add(5 * time.Minute), lastSeen: time.Now().Add(-time.Minute)},
+		"2.2.2.2": {count: 5, lockedUntil: time.Now().Add(5 * time.Minute), lastSeen: time.Now().Add(-2 * time.Minute)},
+	}}
+
+	s.limitMu.Lock()
+	s.evictOldestLoginLimitLocked()
+	s.limitMu.Unlock()
+
+	if len(s.loginLimits) != 1 {
+		t.Fatalf("expected a locked entry to be evicted when the map is full, len=%d", len(s.loginLimits))
+	}
+	if _, ok := s.loginLimits["2.2.2.2"]; ok {
+		t.Fatal("expected the oldest lastSeen entry to be evicted")
+	}
+}

@@ -413,9 +413,23 @@ func scanPhysicalNICs() map[string]bool {
 	}
 	for _, entry := range entries {
 		iface := entry.Name()
-		if _, err := os.Stat("/sys/class/net/" + iface + "/device"); err == nil {
-			out[iface] = true
+		// VLAN (eth0.100) and macvlan (eth0@eth0) subinterfaces share the
+		// parent's PCI device, so counting them would double the parent's
+		// traffic.
+		if strings.ContainsAny(iface, ".@") {
+			continue
 		}
+		_, hasDevice := os.Stat("/sys/class/net/" + iface + "/device")
+		_, isBondMaster := os.Stat("/sys/class/net/" + iface + "/bonding")
+		if hasDevice != nil && isBondMaster != nil {
+			continue
+		}
+		// Enslaved interfaces (bond members) report traffic already counted
+		// on the bond itself.
+		if _, err := os.Stat("/sys/class/net/" + iface + "/master"); err == nil {
+			continue
+		}
+		out[iface] = true
 	}
 	return out
 }

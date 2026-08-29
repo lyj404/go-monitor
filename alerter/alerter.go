@@ -30,9 +30,12 @@ const (
 )
 
 type emailJob struct {
-	subject string
-	body    string
-	cfg     config.Snapshot
+	alertType    string
+	subject      string
+	body         string
+	currentValue string
+	threshold    string
+	cfg          config.Snapshot
 }
 
 type Alerter struct {
@@ -114,27 +117,21 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	if cfg.Alert.CPU && m.CPU != nil {
 		if a.shouldFire("cpu", m.CPU.Usage >= cfg.Alert.CPUThreshold, duration) {
 			msg := fmt.Sprintf("CPU使用率 %.1f%% 超过阈值 %.1f%%", m.CPU.Usage, cfg.Alert.CPUThreshold)
-			if a.send("CPU", msg, cfg) {
-				a.notifyAlert("CPU", msg, fmt.Sprintf("%.1f%%", m.CPU.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.CPUThreshold))
-			}
+			a.send("CPU", "CPU", msg, fmt.Sprintf("%.1f%%", m.CPU.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.CPUThreshold), cfg)
 		}
 	}
 
 	if cfg.Alert.Memory && m.Memory != nil {
 		if a.shouldFire("memory", m.Memory.Usage >= cfg.Alert.MemoryThreshold, duration) {
 			msg := fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.1f%%", m.Memory.Usage, cfg.Alert.MemoryThreshold)
-			if a.send("内存", msg, cfg) {
-				a.notifyAlert("内存", msg, fmt.Sprintf("%.1f%%", m.Memory.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.MemoryThreshold))
-			}
+			a.send("内存", "内存", msg, fmt.Sprintf("%.1f%%", m.Memory.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.MemoryThreshold), cfg)
 		}
 	}
 
 	if cfg.Alert.Disk && m.Disk != nil {
 		if a.shouldFire("disk", m.Disk.Usage >= cfg.Alert.DiskThreshold, duration) {
 			msg := fmt.Sprintf("磁盘使用率 %.1f%% 超过阈值 %.1f%%", m.Disk.Usage, cfg.Alert.DiskThreshold)
-			if a.send("磁盘", msg, cfg) {
-				a.notifyAlert("磁盘", msg, fmt.Sprintf("%.1f%%", m.Disk.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.DiskThreshold))
-			}
+			a.send("磁盘", "磁盘", msg, fmt.Sprintf("%.1f%%", m.Disk.Usage), fmt.Sprintf("%.1f%%", cfg.Alert.DiskThreshold), cfg)
 		}
 	}
 
@@ -142,17 +139,13 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		if cfg.Alert.NetworkUp {
 			if a.shouldFire("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold, duration) {
 				msg := fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold))
-				if a.send("网络上传", msg, cfg) {
-					a.notifyAlert("网络上传", msg, formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s")
-				}
+				a.send("网络上传", "网络上传", msg, formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s", cfg)
 			}
 		}
 		if cfg.Alert.NetworkDown {
 			if a.shouldFire("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold, duration) {
 				msg := fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold))
-				if a.send("网络下载", msg, cfg) {
-					a.notifyAlert("网络下载", msg, formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s")
-				}
+				a.send("网络下载", "网络下载", msg, formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s", cfg)
 			}
 		}
 	}
@@ -161,26 +154,20 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		if cfg.Alert.DiskRead {
 			if a.shouldFire("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold, duration) {
 				msg := fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold))
-				if a.send("磁盘读取", msg, cfg) {
-					a.notifyAlert("磁盘读取", msg, formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s")
-				}
+				a.send("磁盘读取", "磁盘读取", msg, formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s", cfg)
 			}
 		}
 		if cfg.Alert.DiskWrite {
 			if a.shouldFire("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold, duration) {
 				msg := fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold))
-				if a.send("磁盘写入", msg, cfg) {
-					a.notifyAlert("磁盘写入", msg, formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s")
-				}
+				a.send("磁盘写入", "磁盘写入", msg, formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s", cfg)
 			}
 		}
 		if cfg.Alert.DiskIOPS {
 			totalIOPS := m.DiskIO.ReadIOPS + m.DiskIO.WriteIOPS
 			if a.shouldFire("disk_iops", totalIOPS >= cfg.Alert.DiskIOPSThreshold, duration) {
 				msg := fmt.Sprintf("磁盘 IOPS %d (读 %d / 写 %d) 超过阈值 %d", totalIOPS, m.DiskIO.ReadIOPS, m.DiskIO.WriteIOPS, cfg.Alert.DiskIOPSThreshold)
-				if a.send("磁盘IOPS", msg, cfg) {
-					a.notifyAlert("磁盘IOPS", msg, fmt.Sprintf("%d", totalIOPS), fmt.Sprintf("%d", cfg.Alert.DiskIOPSThreshold))
-				}
+				a.send("磁盘IOPS", "磁盘IOPS", msg, fmt.Sprintf("%d", totalIOPS), fmt.Sprintf("%d", cfg.Alert.DiskIOPSThreshold), cfg)
 			}
 		}
 	}
@@ -188,27 +175,21 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	if cfg.Alert.Process && m.Process != nil {
 		if a.shouldFire("process", m.Process.Count >= cfg.Alert.ProcessThreshold, duration) {
 			msg := fmt.Sprintf("进程数 %d 超过阈值 %d", m.Process.Count, cfg.Alert.ProcessThreshold)
-			if a.send("进程数", msg, cfg) {
-				a.notifyAlert("进程数", msg, fmt.Sprintf("%d", m.Process.Count), fmt.Sprintf("%d", cfg.Alert.ProcessThreshold))
-			}
+			a.send("进程数", "进程数", msg, fmt.Sprintf("%d", m.Process.Count), fmt.Sprintf("%d", cfg.Alert.ProcessThreshold), cfg)
 		}
 	}
 
 	if cfg.Alert.CPUTemp && m.CPUTemp != nil {
 		if a.shouldFire("cpu_temp", m.CPUTemp.Temp >= cfg.Alert.CPUTempThreshold, duration) {
 			msg := fmt.Sprintf("CPU温度 %.1f°C 超过阈值 %.1f°C", m.CPUTemp.Temp, cfg.Alert.CPUTempThreshold)
-			if a.send("CPU温度", msg, cfg) {
-				a.notifyAlert("CPU温度", msg, fmt.Sprintf("%.1f°C", m.CPUTemp.Temp), fmt.Sprintf("%.1f°C", cfg.Alert.CPUTempThreshold))
-			}
+			a.send("CPU温度", "CPU温度", msg, fmt.Sprintf("%.1f°C", m.CPUTemp.Temp), fmt.Sprintf("%.1f°C", cfg.Alert.CPUTempThreshold), cfg)
 		}
 	}
 
 	if cfg.Alert.CloseWait && m.TCPStat != nil {
 		if a.shouldFire("close_wait", m.TCPStat.CloseWait >= cfg.Alert.CloseWaitThreshold, duration) {
 			msg := fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold)
-			if a.send("TCP CLOSE_WAIT", msg, cfg) {
-				a.notifyAlert("TCP CLOSE_WAIT", msg, fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold))
-			}
+			a.send("TCP CLOSE_WAIT", "TCP CLOSE_WAIT", msg, fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold), cfg)
 		}
 	}
 }
@@ -246,8 +227,10 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 }
 
 // send enqueues an alert email. Returns true when the job was accepted so
-// callers can persist matching alert history only for delivered attempts.
-func (a *Alerter) send(subject, body string, cfg config.Snapshot) bool {
+// callers can tell delivered attempts from drops. Alert history is recorded
+// by the worker when it picks the job up (via onAlert), keeping DB writes off
+// the collection goroutine.
+func (a *Alerter) send(alertType, subject, body, currentValue, threshold string, cfg config.Snapshot) bool {
 	interval := time.Duration(cfg.Alert.Interval) * time.Second
 	now := time.Now()
 
@@ -264,7 +247,14 @@ func (a *Alerter) send(subject, body string, cfg config.Snapshot) bool {
 	a.lastSent[subject] = now
 	a.sendMu.Unlock()
 
-	job := emailJob{subject: subject, body: body, cfg: cfg}
+	job := emailJob{
+		alertType:    alertType,
+		subject:      subject,
+		body:         body,
+		currentValue: currentValue,
+		threshold:    threshold,
+		cfg:          cfg,
+	}
 	select {
 	case a.jobs <- job:
 		return true
@@ -284,7 +274,7 @@ func (a *Alerter) worker() {
 			if !ok {
 				return
 			}
-			a.deliver(job)
+			a.handleJob(job)
 		case <-a.stopCh:
 			// Drain queued jobs so in-flight alerts are not silently dropped
 			// on shutdown (bounded by Close's overall timeout via wg.Wait).
@@ -294,13 +284,20 @@ func (a *Alerter) worker() {
 					if !ok {
 						return
 					}
-					a.deliver(job)
+					a.handleJob(job)
 				default:
 					return
 				}
 			}
 		}
 	}
+}
+
+// handleJob records alert history and then delivers the email. Running both
+// in the worker keeps the blocking SaveAlert DB write off the collector loop.
+func (a *Alerter) handleJob(job emailJob) {
+	a.notifyAlert(job.alertType, job.body, job.currentValue, job.threshold)
+	a.deliver(job)
 }
 
 func (a *Alerter) deliver(job emailJob) {

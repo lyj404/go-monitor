@@ -26,7 +26,7 @@ func TestSendDropsWhenQueueFull(t *testing.T) {
 	}
 	a.jobs <- emailJob{}
 
-	if ok := a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}}); ok {
+	if ok := a.send("CPU", "CPU", "body", "1%", "2%", config.Snapshot{Alert: config.AlertConfig{Interval: 1}}); ok {
 		t.Fatal("expected send to fail when queue is full")
 	}
 
@@ -78,12 +78,41 @@ func TestSendPrunesExpiredLastSent(t *testing.T) {
 		stopCh: make(chan struct{}),
 	}
 
-	a.send("CPU", "body", config.Snapshot{Alert: config.AlertConfig{Interval: 1}})
+	a.send("CPU", "CPU", "body", "1%", "2%", config.Snapshot{Alert: config.AlertConfig{Interval: 1}})
 
 	a.sendMu.Lock()
 	_, oldExists := a.lastSent["old"]
 	a.sendMu.Unlock()
 	if oldExists {
 		t.Fatal("expected expired lastSent entry to be pruned")
+	}
+}
+
+func TestWorkerRecordsAlertHistory(t *testing.T) {
+	t.Parallel()
+
+	a := &Alerter{
+		conditionStartTimes: make(map[string]time.Time),
+		lastSent:            make(map[string]time.Time),
+		jobs:                make(chan emailJob, 1),
+		stopCh:              make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	var gotType, gotMsg string
+	a.SetOnAlert(func(alertType, message, currentValue, threshold string) {
+		gotType, gotMsg = alertType, message
+		close(done)
+	})
+
+	if !a.send("CPU", "CPU", "cpu超阈值", "91%", "80%", config.Snapshot{Alert: config.AlertConfig{Interval: 1}}) {
+		t.Fatal("expected send to enqueue the job")
+	}
+
+	a.handleJob(<-a.jobs)
+
+	<-done
+	if gotType != "CPU" || gotMsg != "cpu超阈值" {
+		t.Fatalf("unexpected history payload: type=%q msg=%q", gotType, gotMsg)
 	}
 }

@@ -302,6 +302,20 @@ func (s *DB) Close() error {
 	return s.db.Close()
 }
 
+// FlushNetworkTotals persists the in-memory network totals accumulated since
+// the last hourly boundary. Called during shutdown so a restart does not lose
+// up to an hour of traffic data.
+func (s *DB) FlushNetworkTotals(upload, download, lanUp, lanDown, wanUp, wanDown int64, cfg *config.Config) {
+	loc := aggregationLocation(cfg)
+	if err := s.SaveHourlyNetwork(upload, download, lanUp, lanDown, wanUp, wanDown, loc); err != nil {
+		log.Println("关停时保存网络流量失败:", err)
+		return
+	}
+	if err := s.SaveMonthlyNetwork(loc); err != nil {
+		log.Println("关停时保存月度流量汇总失败:", err)
+	}
+}
+
 func (s *DB) StartHourlyTasks(stopCh <-chan struct{}, cfg *config.Config) {
 	s.hourlyWg.Add(1)
 	go func() {
@@ -373,7 +387,13 @@ func (s *DB) CleanOldData(retentionDays, retentionMonths int, loc *time.Location
 
 	if retentionDays > 0 {
 		cutoff := now.AddDate(0, 0, -retentionDays).Format("2006-01-02")
-		if _, err := s.db.Exec(`DELETE FROM daily_network WHERE date < ?`, cutoff); err != nil {
+		// Keep the current month's rows: SaveMonthlyNetwork re-aggregates the
+		// running month from daily_network every hour, so deleting days that
+		// are still inside the current month would permanently shrink the
+		// monthly total when retention_days is shorter than the elapsed days
+		// of the month.
+		monthStart := now.Format("2006-01") + "-01"
+		if _, err := s.db.Exec(`DELETE FROM daily_network WHERE date < ? AND date < ?`, cutoff, monthStart); err != nil {
 			return err
 		}
 	}
@@ -493,13 +513,14 @@ func (s *DB) SaveDailyMetrics(hm collector.HourlyMetrics, loc *time.Location) er
 			-- sample_count tracks how many collection cycles contributed to
 			-- this day. Each metric type keeps its own count (a type with a
 			-- failed/nil collector accrues fewer), so derive sample_count as
-			-- the largest per-type count rather than summing a meaningless
-			-- running max. Matches the INSERT-time value (max of the three
-			-- hourly per-type samples).
+			-- the largest per-type total rather than summing a meaningless
+			-- running max. UPDATE right-hand sides see pre-update values, so
+			-- excluded.* must be added here to stay in sync with the per-type
+			-- columns updated in the same statement.
 			sample_count = MAX(
-				daily_metrics.cpu_samples,
-				daily_metrics.memory_samples,
-				daily_metrics.disk_samples
+				daily_metrics.cpu_samples + excluded.cpu_samples,
+				daily_metrics.memory_samples + excluded.memory_samples,
+				daily_metrics.disk_samples + excluded.disk_samples
 			),
 			created_at = excluded.created_at
 	`, date, hm.AvgCPU, hm.MaxCPU, hm.AvgMemory, hm.MaxMemory, hm.AvgDisk, hm.MaxDisk,
