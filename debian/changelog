@@ -1,3 +1,10 @@
+go-monitor (1.3.0) stable; urgency=low
+
+  * 新增版本检测功能：显示当前版本并与 GitHub 最新发布版对比
+  * 修复 deb 升级覆盖用户配置的问题：将 /etc/go-monitor/config.yaml 标记为 conffile
+
+ -- lyj <lyj404@qq.com>  Sat, 29 Aug 2026 00:00:00 +0000
+
 go-monitor (1.0.0) stable; urgency=low
 
   * Initial release
