@@ -27,6 +27,9 @@ monitor:
   # lan_wan_split: false
   disk_root: true
   disk_io: true
+  # disk_iops: 磁盘 IOPS 监控，可独立于 disk_io 开关。
+  # 省略此行时默认开启（兼容旧配置文件）。
+  disk_iops: true
 smtp:
   host: smtp.qq.com
   port: 587

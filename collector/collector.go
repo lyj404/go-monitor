@@ -165,11 +165,22 @@ func (c *Collector) collect() {
 		}()
 	}
 
-	if enabled.Monitor.DiskIO {
+	// Read/write rates and IOPS come from the same /proc/diskstats scan;
+	// either toggle is enough to run the collector, and disabled fields are
+	// zeroed so only requested data is exposed and alerted on.
+	diskIOEnabled := enabled.Monitor.DiskIO
+	iopsEnabled := enabled.Monitor.IOPSEnabled()
+	if diskIOEnabled || iopsEnabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if dio, err := CollectDiskIO(); err == nil {
+				if !diskIOEnabled {
+					dio.ReadBytes, dio.WriteBytes = 0, 0
+				}
+				if !iopsEnabled {
+					dio.ReadIOPS, dio.WriteIOPS = 0, 0
+				}
 				mu.Lock()
 				m.DiskIO = dio
 				mu.Unlock()

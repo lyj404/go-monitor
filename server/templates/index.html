@@ -446,7 +446,7 @@
                 <div class="detail" id="diskWriteUnit">字节/秒</div>
             </div>
 
-            <div class="card">
+            <div class="card" id="diskIOPSCard">
                 <div class="card-header">
                     <span class="card-title">磁盘 IOPS</span>
                     <div class="card-icon iops">
@@ -599,6 +599,11 @@
                 const cfg = await resp.json();
                 if (cfg.name && cfg.name.trim() !== '') {
                     document.getElementById('serverName').textContent = cfg.name;
+                }
+                if (cfg.monitor) {
+                    // Hide the IOPS card when monitoring is disabled for it.
+                    document.getElementById('diskIOPSCard').style.display =
+                        cfg.monitor.disk_iops === false ? 'none' : '';
                 }
             } catch(e) { console.error(e); }
         }

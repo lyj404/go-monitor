@@ -163,7 +163,10 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 				a.send("磁盘写入", "磁盘写入", msg, formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s", cfg)
 			}
 		}
-		if cfg.Alert.DiskIOPS {
+		// Skip when IOPS monitoring itself is disabled: the metric fields
+		// are zeroed by the collector then and could never meaningfully
+		// cross a threshold.
+		if cfg.Alert.DiskIOPS && cfg.Monitor.IOPSEnabled() {
 			totalIOPS := m.DiskIO.ReadIOPS + m.DiskIO.WriteIOPS
 			if a.shouldFire("disk_iops", totalIOPS >= cfg.Alert.DiskIOPSThreshold, duration) {
 				msg := fmt.Sprintf("磁盘 IOPS %d (读 %d / 写 %d) 超过阈值 %d", totalIOPS, m.DiskIO.ReadIOPS, m.DiskIO.WriteIOPS, cfg.Alert.DiskIOPSThreshold)

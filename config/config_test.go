@@ -130,3 +130,48 @@ func TestReloadRejectsInvalidUpdate(t *testing.T) {
 		t.Fatal("invalid reload should not mutate in-memory config")
 	}
 }
+
+func TestDiskIOPSToggle(t *testing.T) {
+	t.Parallel()
+
+	// An absent key defaults to enabled so configs saved before the toggle
+	// existed keep tracking IOPS.
+	if !(MonitorConfig{}).IOPSEnabled() {
+		t.Fatal("absent disk_iops should default to enabled")
+	}
+	off := false
+	if (MonitorConfig{DiskIOPS: &off}).IOPSEnabled() {
+		t.Fatal("explicit false should disable IOPS")
+	}
+	on := true
+	if !(MonitorConfig{DiskIOPS: &on}).IOPSEnabled() {
+		t.Fatal("explicit true should enable IOPS")
+	}
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("monitor:\n  interval: 3\n  disk_io: true\n"), 0644); err != nil {
+		t.Fatalf("write seed config: %v", err)
+	}
+	cfg := FromSnapshot(path, Snapshot{
+		Server:  ServerConfig{Port: 8080},
+		Monitor: MonitorConfig{Interval: 3, DiskIO: true, DiskIOPS: &on},
+		Alert:   AlertConfig{Interval: 60},
+	})
+
+	updated := map[string]interface{}{
+		"monitor": map[string]interface{}{
+			"disk_iops": false,
+		},
+	}
+	if _, err := cfg.Reload(updated); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	snap := cfg.Snapshot()
+	if snap.Monitor.IOPSEnabled() {
+		t.Fatal("reload should disable IOPS monitoring")
+	}
+	// Toggling one key must not touch the other monitor fields.
+	if !snap.Monitor.DiskIO {
+		t.Fatal("unrelated monitor fields must survive reload")
+	}
+}

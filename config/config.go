@@ -58,10 +58,19 @@ type MonitorConfig struct {
 	LanWanSplit bool `yaml:"lan_wan_split"`
 	DiskRoot    bool `yaml:"disk_root"`
 	DiskIO      bool `yaml:"disk_io"`
-	Process     bool `yaml:"process"`
-	Uptime      bool `yaml:"uptime"`
-	TCPStat     bool `yaml:"tcpstat"`
-	CPUTemp     bool `yaml:"cpu_temp"`
+	// DiskIOPS is a *bool so an absent key can default to enabled: IOPS
+	// used to be tracked whenever DiskIO was on, and older config files
+	// saved by the settings page do not contain the key.
+	DiskIOPS *bool `yaml:"disk_iops"`
+	Process  bool  `yaml:"process"`
+	Uptime   bool  `yaml:"uptime"`
+	TCPStat  bool  `yaml:"tcpstat"`
+	CPUTemp  bool  `yaml:"cpu_temp"`
+}
+
+// IOPSEnabled reports whether disk IOPS monitoring is on.
+func (m MonitorConfig) IOPSEnabled() bool {
+	return m.DiskIOPS == nil || *m.DiskIOPS
 }
 
 type SMTPConfig struct {
@@ -191,6 +200,7 @@ func (c *Config) MaskSensitive() map[string]interface{} {
 			"lan_wan_split": c.data.Monitor.LanWanSplit,
 			"disk_root":     c.data.Monitor.DiskRoot,
 			"disk_io":       c.data.Monitor.DiskIO,
+			"disk_iops":     c.data.Monitor.IOPSEnabled(),
 			"process":       c.data.Monitor.Process,
 			"uptime":        c.data.Monitor.Uptime,
 			"tcpstat":       c.data.Monitor.TCPStat,
@@ -277,6 +287,10 @@ func cloneSnapshot(s Snapshot) Snapshot {
 	if s.SMTP.To != nil {
 		out.SMTP.To = append([]string{}, s.SMTP.To...)
 	}
+	if s.Monitor.DiskIOPS != nil {
+		v := *s.Monitor.DiskIOPS
+		out.Monitor.DiskIOPS = &v
+	}
 	return out
 }
 
@@ -333,6 +347,9 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 		}
 		if v, ok := mon["disk_io"].(bool); ok {
 			c.Monitor.DiskIO = v
+		}
+		if v, ok := mon["disk_iops"].(bool); ok {
+			c.Monitor.DiskIOPS = &v
 		}
 		if v, ok := mon["process"].(bool); ok {
 			c.Monitor.Process = v

@@ -310,6 +310,10 @@
                 <label>磁盘读写监控</label>
                 <label class="switch"><input type="checkbox" id="monitor_disk_io"><span class="slider"></span></label>
             </div>
+            <div class="switch-row">
+                <label>磁盘 IOPS 监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_disk_iops"><span class="slider"></span></label>
+            </div>
         </div>
 
         <div class="section">
@@ -476,6 +480,7 @@
                 document.getElementById('monitor_lan_wan_split').checked = cfg.monitor.lan_wan_split || false;
                 document.getElementById('monitor_disk_root').checked = cfg.monitor.disk_root || false;
                 document.getElementById('monitor_disk_io').checked = cfg.monitor.disk_io || false;
+                document.getElementById('monitor_disk_iops').checked = cfg.monitor.disk_iops !== false;
 
                 document.getElementById('smtp_host').value = cfg.smtp.host || '';
                 document.getElementById('smtp_port').value = cfg.smtp.port || 587;
@@ -545,7 +550,8 @@
                     network_down: document.getElementById('monitor_network_down').checked,
                     lan_wan_split: document.getElementById('monitor_lan_wan_split').checked,
                     disk_root: document.getElementById('monitor_disk_root').checked,
-                    disk_io: document.getElementById('monitor_disk_io').checked
+                    disk_io: document.getElementById('monitor_disk_io').checked,
+                    disk_iops: document.getElementById('monitor_disk_iops').checked
                 },
                 smtp: {
                     host: document.getElementById('smtp_host').value,
