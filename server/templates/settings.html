@@ -323,6 +323,22 @@
                 <label>磁盘 IOPS 监控</label>
                 <label class="switch"><input type="checkbox" id="monitor_disk_iops"><span class="slider"></span></label>
             </div>
+            <div class="switch-row">
+                <label>进程数监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_process"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>运行时间监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_uptime"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>TCP 连接监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_tcpstat"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+                <label>CPU 温度监控</label>
+                <label class="switch"><input type="checkbox" id="monitor_cpu_temp"><span class="slider"></span></label>
+            </div>
         </div>
 
         <div class="section">
@@ -513,6 +529,10 @@
                 document.getElementById('monitor_disk_root').checked = cfg.monitor.disk_root || false;
                 document.getElementById('monitor_disk_io').checked = cfg.monitor.disk_io || false;
                 document.getElementById('monitor_disk_iops').checked = cfg.monitor.disk_iops !== false;
+                document.getElementById('monitor_process').checked = cfg.monitor.process || false;
+                document.getElementById('monitor_uptime').checked = cfg.monitor.uptime || false;
+                document.getElementById('monitor_tcpstat').checked = cfg.monitor.tcpstat || false;
+                document.getElementById('monitor_cpu_temp').checked = cfg.monitor.cpu_temp || false;
 
                 document.getElementById('smtp_host').value = cfg.smtp.host || '';
                 document.getElementById('smtp_port').value = cfg.smtp.port || 587;
@@ -585,7 +605,11 @@
                     lan_wan_split: document.getElementById('monitor_lan_wan_split').checked,
                     disk_root: document.getElementById('monitor_disk_root').checked,
                     disk_io: document.getElementById('monitor_disk_io').checked,
-                    disk_iops: document.getElementById('monitor_disk_iops').checked
+                    disk_iops: document.getElementById('monitor_disk_iops').checked,
+                    process: document.getElementById('monitor_process').checked,
+                    uptime: document.getElementById('monitor_uptime').checked,
+                    tcpstat: document.getElementById('monitor_tcpstat').checked,
+                    cpu_temp: document.getElementById('monitor_cpu_temp').checked
                 },
                 smtp: {
                     host: document.getElementById('smtp_host').value,

@@ -30,6 +30,12 @@ monitor:
   # disk_iops: 磁盘 IOPS 监控，可独立于 disk_io 开关。
   # 省略此行时默认开启（兼容旧配置文件）。
   disk_iops: true
+  # process / uptime / tcpstat / cpu_temp: 可选采集器，默认关闭。
+  # process、uptime、tcpstat 依赖 Linux /proc；cpu_temp 依赖 /sys。
+  # process: true
+  # uptime: true
+  # tcpstat: true
+  # cpu_temp: true
 smtp:
   host: smtp.qq.com
   port: 587
