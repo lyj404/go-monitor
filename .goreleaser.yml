@@ -15,7 +15,9 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X github.com/lyj404/go-monitor/version.Current={{.Version}}
+      # {{.Tag}} keeps the leading "v" ({{.Version}} strips it), which
+      # golang.org/x/mod/semver requires for version.Current / update check.
+      - -s -w -X github.com/lyj404/go-monitor/version.Current={{.Tag}}
 
 nfpms:
   - id: go-monitor

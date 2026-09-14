@@ -170,3 +170,40 @@ func TestSaveDailyMetricsSampleCountCatchesUp(t *testing.T) {
 		t.Fatalf("avg_cpu = %v, want %v", rows[0].AvgCPU, wantAvgCPU)
 	}
 }
+
+func TestSessionPersistenceRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	db, err := NewDB(filepath.Join(t.TempDir(), "data"))
+	if err != nil {
+		t.Fatalf("new db: %v", err)
+	}
+	defer db.Close()
+
+	expires := time.Now().Add(30 * 24 * time.Hour)
+	if err := db.SaveSession("tok-live", "admin", expires); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+	if err := db.SaveSession("tok-stale", "admin", time.Now().Add(-time.Hour)); err != nil {
+		t.Fatalf("save stale session: %v", err)
+	}
+
+	sessions, err := db.LoadSessions()
+	if err != nil {
+		t.Fatalf("load sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Token != "tok-live" {
+		t.Fatalf("expected only live session, got %+v", sessions)
+	}
+
+	if err := db.DeleteSession("tok-live"); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	sessions, err = db.LoadSessions()
+	if err != nil {
+		t.Fatalf("reload sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected empty sessions after delete, got %+v", sessions)
+	}
+}

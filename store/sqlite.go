@@ -174,6 +174,18 @@ func (s *DB) init() error {
 	_, _ = s.db.Exec(`DROP INDEX IF EXISTS idx_daily_network_date`)
 	_, _ = s.db.Exec(`DROP INDEX IF EXISTS idx_monthly_network_year_month`)
 
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS auth_sessions (
+			token TEXT PRIMARY KEY,
+			username TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	// Migration: add LAN/WAN columns for existing databases.
 	migrateCols := []string{
 		"ALTER TABLE daily_network ADD COLUMN lan_upload INTEGER NOT NULL DEFAULT 0",
@@ -561,6 +573,54 @@ func (s *DB) CleanOldMetrics(retentionDays int, loc *time.Location) error {
 	}
 	cutoff := time.Now().In(loc).AddDate(0, 0, -retentionDays).Format("2006-01-02")
 	_, err := s.db.Exec(`DELETE FROM daily_metrics WHERE date < ?`, cutoff)
+	return err
+}
+
+// PersistedSession is a remember-me login session that survives process restarts.
+type PersistedSession struct {
+	Token     string
+	Username  string
+	ExpiresAt time.Time
+}
+
+func (s *DB) SaveSession(token, username string, expires time.Time) error {
+	_, err := s.db.Exec(`
+		INSERT INTO auth_sessions (token, username, expires_at, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(token) DO UPDATE SET
+			username = excluded.username,
+			expires_at = excluded.expires_at
+	`, token, username, expires.Unix(), time.Now().Unix())
+	return err
+}
+
+func (s *DB) LoadSessions() ([]PersistedSession, error) {
+	rows, err := s.db.Query(`SELECT token, username, expires_at FROM auth_sessions WHERE expires_at > ?`, time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PersistedSession
+	for rows.Next() {
+		var p PersistedSession
+		var exp int64
+		if err := rows.Scan(&p.Token, &p.Username, &exp); err != nil {
+			return nil, err
+		}
+		p.ExpiresAt = time.Unix(exp, 0)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *DB) DeleteSession(token string) error {
+	_, err := s.db.Exec(`DELETE FROM auth_sessions WHERE token = ?`, token)
+	return err
+}
+
+func (s *DB) DeleteExpiredSessions() error {
+	_, err := s.db.Exec(`DELETE FROM auth_sessions WHERE expires_at <= ?`, time.Now().Unix())
 	return err
 }
 

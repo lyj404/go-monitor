@@ -52,6 +52,8 @@ type Server struct {
 type sessionInfo struct {
 	username string
 	expires  time.Time
+	// remember marks sessions persisted to disk so they survive restarts.
+	remember bool
 }
 
 type loginAttempt struct {
@@ -74,7 +76,34 @@ func NewServer(cfg *config.Config, col *collector.Collector, db *store.DB) *Serv
 	}
 	s.cleanupWg.Add(1)
 	go s.cleanupStale()
+	s.loadPersistentSessions()
 	return s
+}
+
+// loadPersistentSessions restores remember-me sessions from disk so a
+// process restart does not force every user back to the login page.
+func (s *Server) loadPersistentSessions() {
+	if s.db == nil {
+		return
+	}
+	sessions, err := s.db.LoadSessions()
+	if err != nil {
+		log.Println("加载持久化会话失败:", err)
+		return
+	}
+	if len(sessions) == 0 {
+		return
+	}
+	s.sessMu.Lock()
+	for _, sess := range sessions {
+		s.sessions[sess.Token] = sessionInfo{
+			username: sess.Username,
+			expires:  sess.ExpiresAt,
+			remember: true,
+		}
+	}
+	s.sessMu.Unlock()
+	log.Printf("已恢复 %d 个记住登录会话", len(sessions))
 }
 
 func (s *Server) Close() {
@@ -117,12 +146,27 @@ func (s *Server) cleanupStale() {
 
 func (s *Server) cleanupStaleOnce(now time.Time) {
 	s.sessMu.Lock()
+	var expiredRemember []string
 	for token, info := range s.sessions {
 		if now.After(info.expires) {
 			delete(s.sessions, token)
+			if info.remember {
+				expiredRemember = append(expiredRemember, token)
+			}
 		}
 	}
 	s.sessMu.Unlock()
+
+	if s.db != nil {
+		for _, token := range expiredRemember {
+			if err := s.db.DeleteSession(token); err != nil {
+				log.Println("删除过期持久化会话失败:", err)
+			}
+		}
+		if err := s.db.DeleteExpiredSessions(); err != nil {
+			log.Println("清理过期持久化会话失败:", err)
+		}
+	}
 
 	s.limitMu.Lock()
 	for ip, attempt := range s.loginLimits {
@@ -244,6 +288,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				s.sessMu.Lock()
 				delete(s.sessions, token)
 				s.sessMu.Unlock()
+				if info.remember && s.db != nil {
+					if err := s.db.DeleteSession(token); err != nil {
+						log.Println("删除过期持久化会话失败:", err)
+					}
+				}
 			}
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
@@ -324,8 +373,15 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		s.sessions[token] = sessionInfo{
 			username: req.Username,
 			expires:  expires,
+			remember: req.Remember,
 		}
 		s.sessMu.Unlock()
+
+		if req.Remember && s.db != nil {
+			if err := s.db.SaveSession(token, req.Username, expires); err != nil {
+				log.Println("持久化记住登录会话失败:", err)
+			}
+		}
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session",
@@ -364,9 +420,17 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 	if err == nil {
+		token := cookie.Value
 		s.sessMu.Lock()
-		delete(s.sessions, cookie.Value)
+		info, ok := s.sessions[token]
+		delete(s.sessions, token)
 		s.sessMu.Unlock()
+
+		if ok && info.remember && s.db != nil {
+			if err := s.db.DeleteSession(token); err != nil {
+				log.Println("删除持久化会话失败:", err)
+			}
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
