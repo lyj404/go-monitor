@@ -242,7 +242,7 @@
             </svg>
         </a>
         <h1>设置</h1>
-        <a class="header-icon-btn header-logout" href="/api/logout" title="退出登录">
+        <a class="header-icon-btn header-logout" href="#" onclick="logout(); return false;" title="退出登录">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
             </svg>
@@ -678,7 +678,13 @@
                 status.textContent = '尚未检查';
                 btn.disabled = false;
             } else if (v.has_update) {
-                status.innerHTML = '发现新版本 <a href="' + v.releases_url + '" target="_blank" rel="noopener">' + v.latest + '</a>';
+                status.textContent = '发现新版本 ';
+                var link = document.createElement('a');
+                link.href = v.releases_url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.textContent = v.latest;
+                status.appendChild(link);
                 status.classList.add('version-outdated');
                 btn.disabled = false;
             } else if (!v.known) {
@@ -715,6 +721,12 @@
 
         loadConfig();
         loadVersion();
+
+        function logout() {
+            fetch('/api/logout', {method: 'POST'}).finally(function() {
+                location.href = '/login';
+            });
+        }
     </script>
 </body>
 </html>

@@ -317,7 +317,7 @@
                 </div>
                 <a class="update-badge" id="updateBadge" href="/settings"></a>
                 <a class="settings-btn" href="/settings" title="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>
-                <button class="logout-btn" onclick="location.href='/api/logout'">退出登录</button>
+                <button class="logout-btn" onclick="logout()">退出登录</button>
             </div>
         </div>
         
@@ -757,27 +757,53 @@
                     fetch('/api/history/monthly').then(r => r.json())
                 ]);
 
-                function netCell(upload, download, lanUp, lanDown, wanUp, wanDown) {
+                var dailyBody = document.getElementById('dailyTable');
+                var monthlyBody = document.getElementById('monthlyTable');
+                dailyBody.innerHTML = '';
+                monthlyBody.innerHTML = '';
+
+                function netCell(tr, upload, download, lanUp, lanDown, wanUp, wanDown) {
+                    var uploadTd = document.createElement('td');
+                    uploadTd.appendChild(document.createTextNode(formatBytes(upload)));
+                    var downloadTd = document.createElement('td');
+                    downloadTd.appendChild(document.createTextNode(formatBytes(download)));
+
                     var hasSplit = (lanUp !== undefined && lanUp !== null);
-                    var uploadStr = formatBytes(upload);
-                    var downloadStr = formatBytes(download);
                     if (hasSplit) {
-                        uploadStr += '<br><span style="font-size:11px;color:var(--text-muted)">内 ' + formatBytes(lanUp) + ' / 公 ' + formatBytes(wanUp) + '</span>';
-                        downloadStr += '<br><span style="font-size:11px;color:var(--text-muted)">内 ' + formatBytes(lanDown) + ' / 公 ' + formatBytes(wanDown) + '</span>';
+                        var muted = 'font-size:11px;color:var(--text-muted)';
+                        var upDetail = document.createElement('span');
+                        upDetail.setAttribute('style', muted);
+                        upDetail.textContent = '内 ' + formatBytes(lanUp) + ' / 公 ' + formatBytes(wanUp);
+                        uploadTd.appendChild(document.createElement('br'));
+                        uploadTd.appendChild(upDetail);
+
+                        var downDetail = document.createElement('span');
+                        downDetail.setAttribute('style', muted);
+                        downDetail.textContent = '内 ' + formatBytes(lanDown) + ' / 公 ' + formatBytes(wanDown);
+                        downloadTd.appendChild(document.createElement('br'));
+                        downloadTd.appendChild(downDetail);
                     }
-                    return '<td>'+uploadStr+'</td><td>'+downloadStr+'</td>';
+                    tr.appendChild(uploadTd);
+                    tr.appendChild(downloadTd);
+                }
+
+                function fillNetTable(tbody, rows, dateField) {
+                    rows.forEach(function(row) {
+                        var tr = document.createElement('tr');
+                        var dateTd = document.createElement('td');
+                        dateTd.textContent = row[dateField];
+                        tr.appendChild(dateTd);
+                        netCell(tr, row.upload, row.download, row.lan_upload, row.lan_download, row.wan_upload, row.wan_download);
+                        tbody.appendChild(tr);
+                    });
                 }
 
                 if (daily.length > 0) {
-                    document.getElementById('dailyTable').innerHTML = daily.map(function(d) {
-                        return '<tr><td>'+d.date+'</td>' + netCell(d.upload, d.download, d.lan_upload, d.lan_download, d.wan_upload, d.wan_download) + '</tr>';
-                    }).join('');
+                    fillNetTable(dailyBody, daily, 'date');
                 }
 
                 if (monthly.length > 0) {
-                    document.getElementById('monthlyTable').innerHTML = monthly.map(function(m) {
-                        return '<tr><td>'+m.year_month+'</td>' + netCell(m.upload, m.download, m.lan_upload, m.lan_download, m.wan_upload, m.wan_download) + '</tr>';
-                    }).join('');
+                    fillNetTable(monthlyBody, monthly, 'year_month');
                 }
             } catch(e) { console.error(e); }
         }
@@ -813,15 +839,21 @@
                 const resp = await fetch('/api/history/metrics?limit=30');
                 const metrics = await resp.json();
                 if (metrics && metrics.length > 0) {
-                    document.getElementById('metricsTable').innerHTML = metrics.map(function(m) {
-                        return '<tr>' +
-                            '<td>'+m.date+'</td>' +
-                            '<td>'+m.avg_cpu.toFixed(1)+'% / '+m.max_cpu.toFixed(1)+'%</td>' +
-                            '<td>'+m.avg_memory.toFixed(1)+'% / '+m.max_memory.toFixed(1)+'%</td>' +
-                            '<td>'+m.avg_disk.toFixed(1)+'% / '+m.max_disk.toFixed(1)+'%</td>' +
-                            '<td>'+m.sample_count+'</td>' +
-                            '</tr>';
-                    }).join('');
+                    var tbody = document.getElementById('metricsTable');
+                    tbody.innerHTML = '';
+                    metrics.forEach(function(m) {
+                        var tr = document.createElement('tr');
+                        [m.date,
+                         m.avg_cpu.toFixed(1)+'% / '+m.max_cpu.toFixed(1)+'%',
+                         m.avg_memory.toFixed(1)+'% / '+m.max_memory.toFixed(1)+'%',
+                         m.avg_disk.toFixed(1)+'% / '+m.max_disk.toFixed(1)+'%',
+                         String(m.sample_count)].forEach(function(v) {
+                            var td = document.createElement('td');
+                            td.textContent = v == null ? '--' : v;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
                 }
             } catch(e) { console.error(e); }
         }
@@ -856,6 +888,12 @@
                     badge.classList.add('show');
                 }
             } catch(e) { console.error(e); }
+        }
+
+        function logout() {
+            fetch('/api/logout', {method: 'POST'}).finally(function() {
+                location.href = '/login';
+            });
         }
 
         loadServerName();

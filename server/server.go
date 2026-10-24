@@ -418,6 +418,11 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	cookie, err := r.Cookie("session")
 	if err == nil {
 		token := cookie.Value

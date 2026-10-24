@@ -134,6 +134,54 @@ func TestCloseIsIdempotent(t *testing.T) {
 	s.Close()
 }
 
+func TestSameOriginPolicy(t *testing.T) {
+	t.Parallel()
+
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := sameOriginPolicy(ok)
+
+	cases := []struct {
+		name   string
+		method string
+		origin string
+		host   string
+		want   int
+	}{
+		// No Origin header: non-browser clients (curl, health checks).
+		{name: "post without origin passes", method: http.MethodPost, origin: "", host: "m:9527", want: http.StatusOK},
+		// Same-origin browser requests.
+		{name: "post same origin passes", method: http.MethodPost, origin: "http://m:9527", host: "m:9527", want: http.StatusOK},
+		// Cross-site POST must be rejected.
+		{name: "post cross origin rejected", method: http.MethodPost, origin: "http://evil.example", host: "m:9527", want: http.StatusForbidden},
+		// A lookalike host must not pass the string comparison.
+		{name: "post lookalike origin rejected", method: http.MethodPost, origin: "http://m:9527.evil.example", host: "m:9527", want: http.StatusForbidden},
+		// HTTPS page posting to HTTP host must be rejected (scheme differs).
+		{name: "post https origin to http host rejected", method: http.MethodPost, origin: "https://m:9527", host: "m:9527", want: http.StatusForbidden},
+		// Safe methods are not state-changing and always pass.
+		{name: "get cross origin passes", method: http.MethodGet, origin: "http://evil.example", host: "m:9527", want: http.StatusOK},
+		// PUT (config save) is covered by the same check.
+		{name: "put cross origin rejected", method: http.MethodPut, origin: "http://evil.example", host: "m:9527", want: http.StatusForbidden},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, "/", nil)
+			req.Host = tc.host
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("got %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}
+
 func TestEvictOldestLoginLimitAlwaysFreesSlot(t *testing.T) {
 	t.Parallel()
 

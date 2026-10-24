@@ -137,13 +137,13 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 
 	if m.Network != nil {
 		if cfg.Alert.NetworkUp {
-			if a.shouldFire("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold, duration) {
+			if a.shouldFireNow("upload", m.Network.Upload >= cfg.Alert.NetworkUpThreshold) {
 				msg := fmt.Sprintf("上传速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Upload), formatBytes(cfg.Alert.NetworkUpThreshold))
 				a.send("网络上传", "网络上传", msg, formatBytes(m.Network.Upload)+"/s", formatBytes(cfg.Alert.NetworkUpThreshold)+"/s", cfg)
 			}
 		}
 		if cfg.Alert.NetworkDown {
-			if a.shouldFire("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold, duration) {
+			if a.shouldFireNow("download", m.Network.Download >= cfg.Alert.NetworkDownThreshold) {
 				msg := fmt.Sprintf("下载速率 %s/s 超过阈值 %s/s", formatBytes(m.Network.Download), formatBytes(cfg.Alert.NetworkDownThreshold))
 				a.send("网络下载", "网络下载", msg, formatBytes(m.Network.Download)+"/s", formatBytes(cfg.Alert.NetworkDownThreshold)+"/s", cfg)
 			}
@@ -152,13 +152,13 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 
 	if m.DiskIO != nil {
 		if cfg.Alert.DiskRead {
-			if a.shouldFire("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold, duration) {
+			if a.shouldFireNow("disk_read", m.DiskIO.ReadBytes >= cfg.Alert.DiskReadThreshold) {
 				msg := fmt.Sprintf("读取速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.ReadBytes), formatBytes(cfg.Alert.DiskReadThreshold))
 				a.send("磁盘读取", "磁盘读取", msg, formatBytes(m.DiskIO.ReadBytes)+"/s", formatBytes(cfg.Alert.DiskReadThreshold)+"/s", cfg)
 			}
 		}
 		if cfg.Alert.DiskWrite {
-			if a.shouldFire("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold, duration) {
+			if a.shouldFireNow("disk_write", m.DiskIO.WriteBytes >= cfg.Alert.DiskWriteThreshold) {
 				msg := fmt.Sprintf("写入速率 %s/s 超过阈值 %s/s", formatBytes(m.DiskIO.WriteBytes), formatBytes(cfg.Alert.DiskWriteThreshold))
 				a.send("磁盘写入", "磁盘写入", msg, formatBytes(m.DiskIO.WriteBytes)+"/s", formatBytes(cfg.Alert.DiskWriteThreshold)+"/s", cfg)
 			}
@@ -168,7 +168,7 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 		// cross a threshold.
 		if cfg.Alert.DiskIOPS && cfg.Monitor.IOPSEnabled() {
 			totalIOPS := m.DiskIO.ReadIOPS + m.DiskIO.WriteIOPS
-			if a.shouldFire("disk_iops", totalIOPS >= cfg.Alert.DiskIOPSThreshold, duration) {
+			if a.shouldFireNow("disk_iops", totalIOPS >= cfg.Alert.DiskIOPSThreshold) {
 				msg := fmt.Sprintf("磁盘 IOPS %d (读 %d / 写 %d) 超过阈值 %d", totalIOPS, m.DiskIO.ReadIOPS, m.DiskIO.WriteIOPS, cfg.Alert.DiskIOPSThreshold)
 				a.send("磁盘IOPS", "磁盘IOPS", msg, fmt.Sprintf("%d", totalIOPS), fmt.Sprintf("%d", cfg.Alert.DiskIOPSThreshold), cfg)
 			}
@@ -190,7 +190,7 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 	}
 
 	if cfg.Alert.CloseWait && m.TCPStat != nil {
-		if a.shouldFire("close_wait", m.TCPStat.CloseWait >= cfg.Alert.CloseWaitThreshold, duration) {
+		if a.shouldFireNow("close_wait", m.TCPStat.CloseWait >= cfg.Alert.CloseWaitThreshold) {
 			msg := fmt.Sprintf("CLOSE_WAIT连接数 %d 超过阈值 %d", m.TCPStat.CloseWait, cfg.Alert.CloseWaitThreshold)
 			a.send("TCP CLOSE_WAIT", "TCP CLOSE_WAIT", msg, fmt.Sprintf("%d", m.TCPStat.CloseWait), fmt.Sprintf("%d", cfg.Alert.CloseWaitThreshold), cfg)
 		}
@@ -198,10 +198,10 @@ func (a *Alerter) CheckWithConfig(m collector.Metrics, cfg config.Snapshot) {
 }
 
 // shouldFire returns true when the condition has been continuously met for
-// the configured duration. duration <= 0 fires on the first sample that meets
-// the condition. The state is reset on success so that re-firing requires
-// another full duration window — limiting noise. The actual "minimum interval
-// between emails" is enforced separately in send().
+// the given duration. duration <= 0 fires on the first sample that meets the
+// condition. The state is reset on success so that re-firing requires another
+// full duration window — limiting noise. The actual "minimum interval between
+// emails" is enforced separately in send().
 func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Duration) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -227,6 +227,15 @@ func (a *Alerter) shouldFire(name string, conditionMet bool, duration time.Durat
 		return true
 	}
 	return false
+}
+
+// shouldFireNow fires on the first sample that meets the condition, skipping
+// the continuous-duration window. Rate-based metrics (network throughput,
+// disk IO, connection counts) fluctuate between samples, so requiring them
+// to hold for `duration` can keep the window from ever filling and silently
+// suppress the alert forever; the send interval is the intended throttle.
+func (a *Alerter) shouldFireNow(name string, conditionMet bool) bool {
+	return a.shouldFire(name, conditionMet, 0)
 }
 
 // send enqueues an alert email. Returns true when the job was accepted so

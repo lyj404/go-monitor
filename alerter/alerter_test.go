@@ -52,6 +52,24 @@ func TestShouldFireDurationZero(t *testing.T) {
 	}
 }
 
+func TestShouldFireNowSkipsDurationWindow(t *testing.T) {
+	t.Parallel()
+
+	a := New()
+	defer a.Close()
+
+	// Rate-based alerts must fire on the first over-threshold sample even
+	// when the config sets a continuous duration: momentary spikes below
+	// the threshold between samples would otherwise keep resetting the
+	// window and the alert would never fire.
+	if !a.shouldFireNow("upload", true) {
+		t.Fatal("shouldFireNow should fire on the first met sample")
+	}
+	if a.shouldFireNow("upload", false) {
+		t.Fatal("cleared condition must not fire")
+	}
+}
+
 func TestCloseMarksAlerterClosed(t *testing.T) {
 	t.Parallel()
 

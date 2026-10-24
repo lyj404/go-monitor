@@ -131,6 +131,51 @@ func TestReloadRejectsInvalidUpdate(t *testing.T) {
 	}
 }
 
+func TestReloadIgnoresInvalidPort(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  port: 8080\nmonitor:\n  interval: 3\nalert:\n  interval: 60\n"), 0644); err != nil {
+		t.Fatalf("write seed config: %v", err)
+	}
+
+	cfg := FromSnapshot(path, Snapshot{
+		Server:  ServerConfig{Port: 8080},
+		Monitor: MonitorConfig{Interval: 3},
+		Alert:   AlertConfig{Interval: 60},
+	})
+
+	// The settings page sends JSON numbers, so port arrives as float64.
+	// Out-of-range values must be ignored like other invalid types rather
+	// than copied in and persisted by the save below.
+	for _, bad := range []float64{0, -1, 65536, 99999} {
+		updated := map[string]interface{}{
+			"server": map[string]interface{}{
+				"port": bad,
+			},
+		}
+		if _, err := cfg.Reload(updated); err != nil {
+			t.Fatalf("reload with port %v: %v", bad, err)
+		}
+		if got := cfg.Snapshot().Server.Port; got != 8080 {
+			t.Fatalf("port %v was applied; snapshot port = %d", bad, got)
+		}
+	}
+
+	// A valid port still applies.
+	updated := map[string]interface{}{
+		"server": map[string]interface{}{
+			"port": float64(9527),
+		},
+	}
+	if _, err := cfg.Reload(updated); err != nil {
+		t.Fatalf("reload with valid port: %v", err)
+	}
+	if got := cfg.Snapshot().Server.Port; got != 9527 {
+		t.Fatalf("valid port not applied; snapshot port = %d", got)
+	}
+}
+
 func TestDiskIOPSToggle(t *testing.T) {
 	t.Parallel()
 

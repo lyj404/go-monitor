@@ -320,7 +320,11 @@ func applyUpdates(c *Snapshot, updated map[string]interface{}) {
 	}
 
 	if srv, ok := updated["server"].(map[string]interface{}); ok {
-		if v, ok := srv["port"].(float64); ok {
+		// Guard the range here as well as in validate(): a rejected
+		// Reload leaves the in-memory config untouched, but applyUpdates
+		// mutates the snapshot before validation, so an out-of-range port
+		// must not be copied in or it would be persisted on a later save.
+		if v, ok := srv["port"].(float64); ok && v > 0 && v <= 65535 {
 			c.Server.Port = int(v)
 		}
 		if v, ok := srv["data_dir"].(string); ok {

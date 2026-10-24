@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 func (s *Server) Routes() http.Handler {
@@ -26,7 +28,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("/", s.authMiddleware(protected))
 
-	return securityHeaders(mux)
+	return securityHeaders(sameOriginPolicy(mux))
 }
 
 func (s *Server) configAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,4 +51,36 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sameOriginPolicy rejects cross-site state-changing requests. Session
+// cookies are SameSite=Lax, which already blocks most CSRF, but browsers
+// without the attribute support (and future relaxations) still benefit from
+// an explicit check. GET/HEAD/OPTIONS are safe methods and pass through.
+// An absent Origin header is allowed so curl, health checks and non-browser
+// clients keep working; any browser that sends Origin gets it verified.
+// The scheme is compared too, so an https page cannot POST to an http host.
+func sameOriginPolicy(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				u, err := url.Parse(origin)
+				if err != nil || strings.ToLower(u.Scheme) != strings.ToLower(requestScheme(r)) ||
+					strings.ToLower(u.Host) != strings.ToLower(r.Host) {
+					http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requestScheme reports the scheme the request was received on. TLS can only
+// be detected via r.TLS because Go's http server does not expose X-Forwarded-Proto.
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
